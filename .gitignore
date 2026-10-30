@@ -39,7 +39,6 @@ comfyui-gateway/resources/loras/*.safetensors
 comfyui-gateway/resources/vae_approx/*.safetensors
 
 # bundled runtime / agent metadata
-node/
 .commandcode/
 .update/
 .update-backup/

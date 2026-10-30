@@ -1,0 +1,4 @@
+# Windows command scripts must keep native CRLF line endings.
+*.bat -text
+*.cmd -text
+*.vbs -text
