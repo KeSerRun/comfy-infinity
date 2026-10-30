@@ -2,7 +2,7 @@ import axios from "axios";
 
 import i18n from "@/i18n";
 import { LOCAL_GATEWAY_BASE_URL, isLocalGatewayUrl } from "@/constant/app-mode";
-import { buildApiUrl, channelModelOf, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, channelModelOf, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -40,35 +40,17 @@ type ResponseInputMessage =
     | { type: "function_call"; call_id: string; name: string; arguments: string; thoughtSignature?: string }
     | { role: "tool"; tool_call_id: string; content: string };
 
-type ResponseFunctionTool = {
-    type: "function";
-    function: {
-        name: string;
-        description?: string;
-        parameters: Record<string, unknown>;
-        strict?: boolean;
-    };
-};
-
 type ToolResponseResult = {
     content: string;
     toolCalls: ResponseToolCall[];
 };
 
-type ToolChoice = "auto" | "required" | { type: "function"; name: string };
 type ResponseMessageContent = AiTextMessage["content"] | string;
 type ResponseInputContent = { type: "input_text"; text: string } | { type: "input_image"; image_url: string };
 type ResponseInputItem =
     | { role: "system" | "user" | "assistant"; content: string | ResponseInputContent[] }
     | { type: "function_call"; call_id: string; name: string; arguments: string }
     | { type: "function_call_output"; call_id: string; output: string };
-type ResponseApiToolDefinition = {
-    type: "function";
-    name: string;
-    description?: string;
-    parameters: Record<string, unknown>;
-    strict?: boolean;
-};
 type ResponseApiOutputItem =
     | { type?: "message"; content?: Array<{ type?: string; text?: string }> }
     | { type?: "function_call"; id?: string; call_id?: string; name?: string; arguments?: string };
@@ -432,16 +414,6 @@ function toResponseContent(content: ResponseMessageContent): string | ResponseIn
     return content.map((item) => (item.type === "text" ? { type: "input_text" as const, text: item.text } : { type: "input_image" as const, image_url: item.image_url.url }));
 }
 
-function toResponseTool(tool: ResponseFunctionTool): ResponseApiToolDefinition {
-    return {
-        type: "function",
-        name: tool.function.name,
-        description: tool.function.description,
-        parameters: tool.function.parameters,
-        strict: tool.function.strict,
-    };
-}
-
 function parseToolResponse(payload: ResponseApiPayload): ToolResponseResult {
     const output = payload.output || [];
     const content =
@@ -627,23 +599,6 @@ function jsonValue(value: string): unknown {
     } catch {
         return value;
     }
-}
-
-function toGeminiToolOptions(tools: ResponseFunctionTool[], toolChoice: ToolChoice) {
-    if (!tools.length) return {};
-    const functionDeclarations = tools.map((tool) => ({
-        name: tool.function.name,
-        description: tool.function.description,
-        parameters: tool.function.parameters,
-    }));
-    const functionCallingConfig =
-        typeof toolChoice === "object"
-            ? { mode: "ANY", allowedFunctionNames: [toolChoice.name] }
-            : { mode: toolChoice === "required" ? "ANY" : "AUTO" };
-    return {
-        tools: [{ functionDeclarations }],
-        toolConfig: { functionCallingConfig },
-    };
 }
 
 async function requestGeminiStreamingResponse(config: AiConfig, body: Record<string, unknown>, onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
@@ -1170,38 +1125,3 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
     }
 }
 
-export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">) {
-    try {
-        if (config.apiFormat === "gemini") {
-            const response = await axios.get<GeminiPayload>(geminiApiUrl({ ...defaultGeminiConfig, ...config }), { headers: geminiHeaders({ ...defaultGeminiConfig, ...config }) });
-            validateGeminiPayload(response.data);
-            return (response.data.models || [])
-                .map((model) => model.name?.replace(/^models\//, ""))
-                .filter((id): id is string => Boolean(id))
-                .sort((a, b) => a.localeCompare(b));
-        }
-        const response = await axios.get<{ data?: Array<{ id?: string }>; error?: { message?: string } }>(buildApiUrl(config.baseUrl, "/models"), {
-            headers: {
-                Authorization: `Bearer ${config.apiKey}`,
-            },
-        });
-        return (response.data.data || [])
-            .map((model) => model.id)
-            .filter((id): id is string => Boolean(id))
-            .sort((a, b) => a.localeCompare(b));
-    } catch (error) {
-        throw new Error(readAxiosError(error, apiText("modelReadFailed")));
-    }
-}
-
-export async function fetchChannelModels(channel: ModelChannel) {
-    return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat });
-}
-
-const defaultGeminiConfig: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "model" | "systemPrompt"> = {
-    baseUrl: "https://generativelanguage.googleapis.com",
-    apiKey: "",
-    apiFormat: "gemini",
-    model: "",
-    systemPrompt: "",
-};

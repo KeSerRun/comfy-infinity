@@ -7,7 +7,7 @@
  *   - 缺失的服务按 comfy → gateway → canvas 顺序拉起；
  *   - ComfyUI 找不到时如实提示，仍启动网关并打开 /admin；
  *   - 画布由内置静态服务器托管 infinite-canvas/web/dist（SPA fallback，仅绑 127.0.0.1）；
- *   - Ctrl+C 只停止“本启动器启动的”子进程；关闭画布最后一个页面时，连同接管的 ComfyUI 一起停止（可配置保留）。
+ *   - 关闭画布不会停止后台；Ctrl+C 或从托盘显式退出时，才停止“本启动器启动的”子进程。
  *
  * 用法：
  *   node launcher/start.mjs [--dry-run] [--no-open]
@@ -30,6 +30,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const LOG_PATH = path.join(__dirname, "launcher.log");
+const LOG_BACKUP_PATH = path.join(__dirname, "launcher.log.1");
+const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 
 const ARGV = process.argv.slice(2);
 const DRY_RUN = ARGV.includes("--dry-run");
@@ -48,9 +50,7 @@ const DEFAULT_CONFIG = {
   gatewayStartTimeoutSec: 30,
   openBrowser: true,
   openConsole: true,
-  closeCanvasStopsBackend: true,
-  stopAdoptedComfyOnCanvasClose: true,
-  canvasIdleGraceSec: 30,
+  stopAdoptedComfyOnExit: true,
   allowLan: false,
   canvasHost: "127.0.0.1",
   gatewayHost: "127.0.0.1",
@@ -93,6 +93,19 @@ function forwardLines(chunk, tag) {
   }
 }
 
+// 启动时轮转：超过 5MB 就改名为 launcher.log.1（只保留一份），避免日志无限增长。
+function rotateLauncherLog() {
+  try {
+    const stat = fs.statSync(LOG_PATH);
+    if (stat.size < LOG_ROTATE_BYTES) return "";
+    fs.rmSync(LOG_BACKUP_PATH, { force: true });
+    fs.renameSync(LOG_PATH, LOG_BACKUP_PATH);
+    return LOG_BACKUP_PATH;
+  } catch {
+    return "";
+  }
+}
+
 /* ------------------------------------------------------------------ 配置 */
 
 function toPort(value, fallback, envName) {
@@ -100,27 +113,6 @@ function toPort(value, fallback, envName) {
   if (Number.isInteger(n) && n > 0 && n < 65536) return n;
   if (envName && process.env[envName]) log(`环境变量 ${envName}=${process.env[envName]} 非法，忽略`, "WARN");
   return fallback;
-}
-
-// 15s 是 v0.21.18 及以前的默认值；旧 config.json 原样保留 15 时按新默认处理。
-// 想用 15s 可显式设环境变量 CANVAS_IDLE_GRACE_SEC=15。
-const LEGACY_IDLE_GRACE_SEC = 15;
-
-function resolveIdleGraceSec(merged) {
-  const fromEnv = process.env.CANVAS_IDLE_GRACE_SEC;
-  if (fromEnv !== undefined) {
-    const n = Number(fromEnv);
-    if (n > 0) return n;
-    log(`环境变量 CANVAS_IDLE_GRACE_SEC=${fromEnv} 非法，改用默认 ${DEFAULT_CONFIG.canvasIdleGraceSec}s`, "WARN");
-    return DEFAULT_CONFIG.canvasIdleGraceSec;
-  }
-  const n = Number(merged.canvasIdleGraceSec);
-  if (!(n > 0)) return DEFAULT_CONFIG.canvasIdleGraceSec;
-  if (n === LEGACY_IDLE_GRACE_SEC) {
-    log(`画布空闲宽限 ${LEGACY_IDLE_GRACE_SEC}s 是旧默认值，按新默认 ${DEFAULT_CONFIG.canvasIdleGraceSec}s 处理。`);
-    return DEFAULT_CONFIG.canvasIdleGraceSec;
-  }
-  return n;
 }
 
 function loadConfig() {
@@ -151,9 +143,9 @@ function loadConfig() {
     gatewayStartTimeoutSec: Number(merged.gatewayStartTimeoutSec) > 0 ? Number(merged.gatewayStartTimeoutSec) : 30,
     openBrowser: merged.openBrowser !== false,
     openConsole: merged.openConsole !== false,
-    closeCanvasStopsBackend: process.env.CLOSE_CANVAS_STOPS_BACKEND !== "0" && merged.closeCanvasStopsBackend !== false,
-    stopAdoptedComfyOnCanvasClose: process.env.STOP_ADOPTED_COMFY !== "0" && merged.stopAdoptedComfyOnCanvasClose !== false,
-    canvasIdleGraceSec: resolveIdleGraceSec(merged),
+    stopAdoptedComfyOnExit:
+      process.env.STOP_ADOPTED_COMFY !== "0" &&
+      (merged.stopAdoptedComfyOnExit ?? merged.stopAdoptedComfyOnCanvasClose) !== false,
     allowLan: merged.allowLan === true,
     canvasHost: normalizeHost(merged.canvasHost, DEFAULT_CONFIG.canvasHost),
     gatewayHost: normalizeHost(merged.gatewayHost, DEFAULT_CONFIG.gatewayHost),
@@ -189,6 +181,65 @@ function persistDiscovery(cfg) {
   } catch (err) {
     log(`保存 launcher/config.json 失败：${err.message}`, "WARN");
   }
+}
+
+function applyComfyDir(cfg, dir) {
+  cfg.comfyDir = dir;
+  const info = comfyInstallInfo(dir);
+  if (info?.workflowsDir) cfg.comfyWorkflowsDir = info.workflowsDir;
+  persistDiscovery(cfg);
+  state.comfyStartError = "";
+  const plan = resolveLaunchPlan(info);
+  return { comfyDir: cfg.comfyDir, workflowsDir: cfg.comfyWorkflowsDir, detected: Boolean(info), plan };
+}
+
+// 原生目录选择会阻塞到用户确认或取消，使用异步子进程避免卡住控制接口和状态轮询。
+function pickComfyDirectory(initial) {
+  return new Promise((resolve, reject) => {
+    if (process.platform !== "win32") {
+      reject(new Error("当前系统不支持原生目录选择"));
+      return;
+    }
+    const initialPath = String(initial || "");
+    const escaped = initialPath.replace(/'/g, "''");
+    const script = [
+      "$ProgressPreference = 'SilentlyContinue'",
+      "Add-Type -AssemblyName System.Windows.Forms | Out-Null",
+      "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
+      "$dialog.Description = '选择 ComfyUI 安装目录'",
+      "$dialog.ShowNewFolderButton = $false",
+      escaped ? `$dialog.SelectedPath = '${escaped}'` : "",
+      "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {",
+      "  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+      "  [Console]::Write($dialog.SelectedPath)",
+      "}",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const powershell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const child = spawn(powershell, ["-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-Command", script], { windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("选择目录超时"));
+    }, 300000);
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) reject(new Error(stderr.trim() || `目录选择窗口异常退出（code=${code}）`));
+      else resolve(stdout.trim());
+    });
+  });
 }
 
 /* -------------------------------------------------------------- HTTP 探测 */
@@ -241,9 +292,12 @@ function parsePortSpec(spec) {
 }
 
 function comfyPortCandidates(cfg) {
+  const reserved = new Set([cfg.gatewayPort, cfg.controlPort, cfg.canvasPort, LEGACY_GATEWAY_PORT].filter((port) => Number.isInteger(port) && port > 0));
   const ports = [];
   const add = (port) => {
     if (!Number.isInteger(port) || port <= 0 || port >= 65536) return;
+    // 别把启动器自己的端口当成 ComfyUI 去探测，否则网关会收到一堆 /system_stats 404。
+    if (reserved.has(port)) return;
     if (!ports.includes(port)) ports.push(port);
   };
   add(portFromUrl(cfg.comfyUrl));
@@ -291,7 +345,7 @@ async function detectCanvas(cfg) {
   return null;
 }
 
-async function waitFor(label, probe, timeoutSec, { intervalMs = 3000, progressEveryMs = 15000 } = {}) {
+async function waitFor(label, probe, timeoutSec, { intervalMs = 3000, progressEveryMs = 15000, shouldAbort } = {}) {
   const deadline = Date.now() + timeoutSec * 1000;
   const started = Date.now();
   let nextNote = started + progressEveryMs;
@@ -300,6 +354,11 @@ async function waitFor(label, probe, timeoutSec, { intervalMs = 3000, progressEv
     if (hit) {
       log(`${label} 就绪（${Math.round((Date.now() - started) / 1000)}s）`);
       return hit;
+    }
+    const abortReason = typeof shouldAbort === "function" ? shouldAbort() : "";
+    if (abortReason) {
+      log(`${label} 中止等待：${abortReason}`, "WARN");
+      return null;
     }
     if (Date.now() >= nextNote) {
       log(`${label} 仍在等待…（已 ${Math.round((Date.now() - started) / 1000)}s / 上限 ${timeoutSec}s）`);
@@ -375,7 +434,7 @@ function comfyInstallInfo(dir) {
   const pythonExe = pythonCandidates.find((candidate) => isFile(candidate) && pythonWorks(candidate)) || pythonCandidates.find((candidate) => isFile(candidate)) || "";
   const scripts = [];
   // 只把内容里真的调用 main.py 的脚本算作 ComfyUI 启动脚本；
-  // 否则我们自己的 start-local.bat、卸载脚本之类都会被误判成 ComfyUI 安装。
+  // 否则我们自己的启动脚本、卸载脚本之类都会被误判成 ComfyUI 安装。
   const pushScript = (file) => {
     if (!isFile(file) || scripts.includes(file)) return;
     try {
@@ -437,7 +496,7 @@ function resolveLaunchPlan(install) {
   return null;
 }
 
-function findComfyInstall(cfg) {
+function collectComfyInstalls(cfg) {
   const home = os.homedir();
   const sameFolder = [
     ROOT,
@@ -450,8 +509,8 @@ function findComfyInstall(cfg) {
     path.resolve(ROOT, "..", "ComfyUI_windows_portable", "ComfyUI"),
   ];
   const localAppData = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
+  const preferred = cfg.comfyDir ? [cfg.comfyDir] : [];
   const common = [
-    cfg.comfyDir,
     path.join(home, "ComfyUI"),
     path.join(home, "Documents", "ComfyUI"),
     path.join(localAppData, "Programs", "@comfyorgcomfyui-electron"),
@@ -464,22 +523,23 @@ function findComfyInstall(cfg) {
     "E:\\ComfyUI\\ComfyUI",
   ].filter(Boolean);
 
+  const found = [];
   const seen = new Set();
   const inspect = (raw, via) => {
-    if (!raw) return null;
+    if (!raw) return;
     const dir = path.resolve(raw);
     const key = dir.toLowerCase();
-    if (seen.has(key)) return null;
+    if (seen.has(key)) return;
     seen.add(key);
     const info = comfyInstallInfo(dir);
-    if (info) log(`ComfyUI 探测命中（${via}）：${dir}`);
-    return info;
+    if (info) {
+      log(`ComfyUI 探测命中（${via}）：${dir}`);
+      found.push(info);
+    }
   };
 
-  for (const dir of sameFolder) {
-    const info = inspect(dir, "同文件夹");
-    if (info) return info;
-  }
+  for (const dir of preferred) inspect(dir, "配置路径");
+  for (const dir of sameFolder) inspect(dir, "同文件夹");
 
   const driveRoot = path.parse(ROOT).root;
   const skip = new Set(["windows", "program files", "program files (x86)", "programdata", "$recycle.bin", "system volume information", "recovery", "perflogs"]);
@@ -494,21 +554,19 @@ function findComfyInstall(cfg) {
     if (!entry.isDirectory() || skip.has(entry.name.toLowerCase())) continue;
     if (Date.now() - started > 2000) break;
     const dir = path.join(driveRoot, entry.name);
-    const info = inspect(dir, "同盘");
-    if (info) return info;
+    inspect(dir, "同盘");
     if (/comfy/i.test(entry.name)) {
-      const child = inspect(path.join(dir, "ComfyUI"), "同盘子目录");
-      if (child) return child;
-      const resourceChild = inspect(path.join(dir, "resources", "ComfyUI"), "同盘 resources/ComfyUI");
-      if (resourceChild) return resourceChild;
+      inspect(path.join(dir, "ComfyUI"), "同盘子目录");
+      inspect(path.join(dir, "resources", "ComfyUI"), "同盘 resources/ComfyUI");
     }
   }
 
-  for (const dir of common) {
-    const info = inspect(dir, "常见目录/配置");
-    if (info) return info;
-  }
-  return null;
+  for (const dir of common) inspect(dir, "常见目录/配置");
+  return found;
+}
+
+function findComfyInstall(cfg) {
+  return collectComfyInstalls(cfg)[0] || null;
 }
 
 async function pickFreePort(ports) {
@@ -538,6 +596,79 @@ async function listenCanvasServer(cfg, preferredPort) {
     if (error.code !== "EADDRINUSE") break;
   }
   throw lastError || new Error("画布端口不可用");
+}
+
+function spawnComfyTracked(plan, port = COMFY_PORT_FIRST) {
+  const child = spawnComfy(plan, port);
+  const failure = { error: null, exited: false, code: null, signal: null };
+  child.on("error", (error) => {
+    failure.error = error;
+  });
+  child.on("exit", (code, signal) => {
+    failure.exited = true;
+    failure.code = code;
+    failure.signal = signal;
+  });
+  return { child, failure };
+}
+
+async function startComfyCandidate(cfg, install, { preferredPort, label, timeoutSec } = {}) {
+  const plan = resolveLaunchPlan(install);
+  if (!plan) return { ok: false, error: "没有可用的启动方式" };
+  const launchPort = plan.kind === "python" ? preferredPort || (await pickFreePort(comfyPortCandidates(cfg))) : COMFY_PORT_FIRST;
+  log(`${label}：尝试 ${plan.kind === "desktop" ? "桌面版" : plan.kind === "script" ? "启动脚本" : "Python"} ${plan.file}`);
+  const { child, failure } = spawnComfyTracked(plan, launchPort);
+  state.comfyChild = child;
+  const ready = await waitFor(
+    label,
+    async () => probeAnyComfy(comfyPortCandidates(cfg), 900),
+    timeoutSec,
+    {
+      intervalMs: 2000,
+      progressEveryMs: 15000,
+      shouldAbort: () => {
+        if (failure.error) return `进程启动失败：${failure.error.message}`;
+        if (failure.exited && failure.code !== 0) {
+          return `进程退出（code=${failure.code}${failure.signal ? `，signal=${failure.signal}` : ""}）`;
+        }
+        return "";
+      },
+    }
+  );
+  if (ready) return { ok: true, url: ready.url, install, plan, child };
+  if (!failure.exited && child.pid) {
+    try {
+      killOurChild(child, "ComfyUI");
+    } catch {
+      /* 失败清理不覆盖原因 */
+    }
+  }
+  if (state.comfyChild === child) state.comfyChild = null;
+  const reason = failure.error
+    ? failure.error.message
+    : failure.exited
+      ? `进程退出（code=${failure.code}${failure.signal ? `，signal=${failure.signal}` : ""}）`
+      : `未在 ${timeoutSec}s 内就绪`;
+  return { ok: false, error: reason, install, plan };
+}
+
+async function startComfyWithFallback(cfg, { preferredPort, label = "ComfyUI", timeoutSec = cfg.comfyStartTimeoutSec } = {}) {
+  const installs = collectComfyInstalls(cfg);
+  if (!installs.length) return { ok: false, error: "未找到 ComfyUI 安装目录" };
+  const failures = [];
+  let firstAttempt = true;
+  for (const install of installs) {
+    log(`ComfyUI 候选路径：${install.dir}`);
+    const result = await startComfyCandidate(cfg, install, { preferredPort: firstAttempt ? preferredPort : undefined, label, timeoutSec });
+    firstAttempt = false;
+    if (result.ok) return result;
+    failures.push(`${install.dir}：${result.error}`);
+    log(`候选路径启动失败（${install.dir}）：${result.error}`, "WARN");
+  }
+  return {
+    ok: false,
+    error: failures.length === 1 ? failures[0] : `所有候选路径均启动失败：${failures.join("；")}`,
+  };
 }
 
 function spawnComfy(plan, port = COMFY_PORT_FIRST) {
@@ -586,16 +717,17 @@ function extractGatewayDeps(archive, destination) {
 let gatewayDepsRepair = null;
 
 function ensureGatewayDeps(cfg) {
-  if (gatewayDepsReady(cfg.gatewayDir)) return Promise.resolve();
+  const serverDir = path.join(cfg.gatewayDir, "server");
+  if (gatewayDepsReady(serverDir)) return Promise.resolve();
   if (!gatewayDepsRepair) {
     gatewayDepsRepair = (async () => {
       if (!isFile(GATEWAY_DEPS_ZIP)) {
-        throw new Error(`网关依赖缺失，且找不到随包 ${GATEWAY_DEPS_ZIP}；请重新解压完整发布包，或在 comfyui-gateway 运行 npm install`);
+        throw new Error(`网关依赖缺失，且找不到随包 ${GATEWAY_DEPS_ZIP}；请重新解压完整发布包，或在 comfyui-gateway/server 运行 npm install`);
       }
       log("检测到网关依赖缺失或不完整，正在用随包依赖修复…", "WARN");
-      extractGatewayDeps(GATEWAY_DEPS_ZIP, cfg.gatewayDir);
-      if (!gatewayDepsReady(cfg.gatewayDir)) {
-        throw new Error("解压随包网关依赖后仍无法加载 express/multer；请在 comfyui-gateway 运行 npm install");
+      extractGatewayDeps(GATEWAY_DEPS_ZIP, serverDir);
+      if (!gatewayDepsReady(serverDir)) {
+        throw new Error("解压随包网关依赖后仍无法加载 express/multer；请在 comfyui-gateway/server 运行 npm install");
       }
       log("网关依赖已自动修复（随包）。");
     })().finally(() => {
@@ -645,9 +777,10 @@ async function quarantineTeManData(comfyRoot) {
 }
 
 function spawnGateway(cfg, comfyUrl, workflowsDir) {
-  const serverEntry = path.join(cfg.gatewayDir, "src", "server.js");
+  const serverDir = path.join(cfg.gatewayDir, "server");
+  const serverEntry = path.join(serverDir, "dist", "server.js");
   if (!isFile(serverEntry)) {
-    throw new Error(`找不到网关入口：${serverEntry}`);
+    throw new Error(`找不到网关入口：${serverEntry}（请先在 comfyui-gateway/server 运行 npm run build）`);
   }
   const env = {
     ...process.env,
@@ -661,7 +794,7 @@ function spawnGateway(cfg, comfyUrl, workflowsDir) {
   };
   if (workflowsDir) env.COMFY_WORKFLOWS_DIR = workflowsDir;
   const child = spawn(process.execPath, [serverEntry], {
-    cwd: cfg.gatewayDir,
+    cwd: serverDir,
     env,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -944,8 +1077,9 @@ const state = {
   legacyProxy: null,
   canvasServer: null,
   controlServer: null,
-  sessionTimer: null,
   restarting: false,
+  comfyStartError: "",
+  starting: { comfy: false, gateway: false, canvas: false },
 };
 
 let shuttingDown = false;
@@ -971,55 +1105,214 @@ function listenerPids(port) {
   return [...pids];
 }
 
-function readSystemStats() {
+// 读取一次 AMD/Intel 显存要起一次 PowerShell（约 1s），控制台每 3s 轮询一次状态，
+// 缓存 5s 可以避免把启动器的事件循环持续占住。
+const GPU_SNAPSHOT_TTL_MS = 5000;
+
+// Windows 自带的 GPU 性能计数器与厂商无关，AMD / Intel 也能读显存占用和利用率。
+// 总量走注册表：Win32_VideoController.AdapterRAM 在显存超过 4GB 时会截断。
+const WINDOWS_GPU_SCRIPT = `
+$ProgressPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$adapters = @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name } | Select-Object Name, AdapterRAM)
+$totals = @(Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Video' -ErrorAction SilentlyContinue | ForEach-Object {
+  $item = Get-ItemProperty ($_.PSPath + '\\0000') -ErrorAction SilentlyContinue
+  if ($item.DriverDesc -and $item.'HardwareInformation.qwMemorySize') {
+    [pscustomobject]@{ name = $item.DriverDesc; bytes = [double]$item.'HardwareInformation.qwMemorySize' }
+  }
+})
+$memory = @(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue | Where-Object { $_.Name } | Select-Object Name, DedicatedUsage, SharedUsage)
+$engines = @(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue | Where-Object { $_.Name } | Select-Object Name, UtilizationPercentage)
+[pscustomobject]@{ adapters = $adapters; totals = $totals; memory = $memory; engines = $engines } | ConvertTo-Json -Depth 4 -Compress
+`.trim();
+
+function parseGpuLuid(name) {
+  const match = /luid_(0x[0-9a-f]+)_(0x[0-9a-f]+)_phys_(\d+)/i.exec(String(name || ""));
+  return match ? `${match[1].toLowerCase()}:${match[2].toLowerCase()}:${match[3]}` : "";
+}
+
+function gpuNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * 计数器实例名只有 LUID，拿不到和适配器名的一一对应关系；按「显存总量降序 ↔ 占用降序」配对。
+ * 单显卡机器是精确的；多显卡时优先把占用最高的 LUID 归给显存最大的那块（通常是正在跑的独显）。
+ */
+function gpuFromWindowsSnapshot(raw) {
+  const data = JSON.parse(String(raw || "{}"));
+  const adapters = [];
+  for (const item of Array.isArray(data.adapters) ? data.adapters : []) {
+    const name = String(item?.Name || "").trim();
+    if (!name || /microsoft basic|remote display/i.test(name)) continue;
+    adapters.push({ name, adapterRam: gpuNumber(item.AdapterRAM) });
+  }
+
+  const totals = new Map();
+  for (const item of Array.isArray(data.totals) ? data.totals : []) {
+    const name = String(item?.name || "").trim().toLowerCase();
+    const bytes = gpuNumber(item?.bytes);
+    if (name && bytes > 0) totals.set(name, bytes);
+  }
+
+  const memories = [];
+  for (const item of Array.isArray(data.memory) ? data.memory : []) {
+    const luid = parseGpuLuid(item?.Name);
+    if (!luid) continue;
+    memories.push({ luid, dedicated: gpuNumber(item?.DedicatedUsage), shared: gpuNumber(item?.SharedUsage) });
+  }
+  memories.sort((a, b) => b.dedicated + b.shared - (a.dedicated + a.shared));
+
+  // 计数器按「进程 + 引擎」拆分，先按引擎类型求和，再取最大值，避免多进程共用引擎时低估负载。
+  const engineSums = new Map();
+  for (const item of Array.isArray(data.engines) ? data.engines : []) {
+    const luid = parseGpuLuid(item?.Name);
+    if (!luid) continue;
+    const type = /engtype_([a-z0-9]+)/i.exec(String(item?.Name || ""))?.[1]?.toLowerCase() || "all";
+    const key = `${luid}|${type}`;
+    engineSums.set(key, (engineSums.get(key) || 0) + Math.max(0, gpuNumber(item?.UtilizationPercentage)));
+  }
+  const utilization = new Map();
+  for (const [key, total] of engineSums) {
+    const [luid] = key.split("|");
+    utilization.set(luid, Math.max(utilization.get(luid) || 0, Math.min(100, total)));
+  }
+
+  const enriched = adapters
+    .map((adapter, index) => ({
+      index,
+      name: adapter.name,
+      totalBytes: totals.get(adapter.name.toLowerCase()) || adapter.adapterRam,
+    }))
+    .sort((a, b) => b.totalBytes - a.totalBytes);
+
+  if (!enriched.length) {
+    return memories.map((memory, index) => ({
+      index,
+      name: `GPU ${index + 1}`,
+      memoryUsedMb: Math.round(memory.dedicated / 1024 / 1024),
+      memoryTotalMb: 0,
+      utilization: utilization.get(memory.luid) || 0,
+    }));
+  }
+
+  return enriched.map((adapter, position) => {
+    const memory = memories[position];
+    return {
+      index: adapter.index,
+      name: adapter.name,
+      memoryUsedMb: memory ? Math.round(memory.dedicated / 1024 / 1024) : 0,
+      memoryTotalMb: Math.round(adapter.totalBytes / 1024 / 1024),
+      utilization: memory ? utilization.get(memory.luid) || 0 : 0,
+    };
+  });
+}
+
+function readNvidiaGpuSync() {
+  const args = ["--query-gpu=index,name,memory.used,memory.total,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"];
+  const candidates = [
+    "nvidia-smi",
+    path.join(process.env.SystemRoot || "C:\\Windows", "System32", "nvidia-smi.exe"),
+  ];
+  let result = null;
+  for (const command of candidates) {
+    result = spawnSync(command, args, { encoding: "utf8", windowsHide: true, timeout: 3000 });
+    if (result.status === 0) break;
+  }
+  if (!result || result.status !== 0) {
+    const detail = String(result?.stderr || result?.stdout || "").trim();
+    return { gpu: [], error: detail || "nvidia-smi 执行失败" };
+  }
+  const gpu = String(result.stdout || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const [gpuIndex, name, used, total, utilization, temperature] = line.split(",").map((part) => part.trim());
+      return {
+        index: Number(gpuIndex) || index,
+        name: name || "GPU",
+        memoryUsedMb: Number(used) || 0,
+        memoryTotalMb: Number(total) || 0,
+        utilization: Number(utilization) || 0,
+        temperature: Number(temperature) || 0,
+      };
+    });
+  if (!gpu.length) return { gpu: [], error: "nvidia-smi 没有返回显卡信息" };
+  return { gpu, error: null };
+}
+
+function readWindowsGpuSync() {
+  const candidates = [
+    path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+    "powershell",
+  ];
+  let lastError = "";
+  for (const command of candidates) {
+    const result = spawnSync(command, ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_GPU_SCRIPT], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 8000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    if (result.error) {
+      lastError = result.error.message || String(result.error);
+      // 只有「找不到这个路径」才换下一个候选；超时或权限错误重试也只会再卡一次。
+      if (result.error.code === "ENOENT") continue;
+      break;
+    }
+    if (result.status !== 0) {
+      lastError = String(result.stderr || result.stdout || "").trim() || `powershell 退出码 ${result.status}`;
+      continue;
+    }
+    try {
+      const gpu = gpuFromWindowsSnapshot(result.stdout);
+      if (gpu.length) return { gpu, error: null };
+      lastError = "未能从 Windows GPU 计数器读取到显卡信息";
+    } catch (error) {
+      lastError = error?.message || String(error);
+    }
+  }
+  return { gpu: [], error: lastError || "无法读取显存信息" };
+}
+
+let statsCache = null;
+let statsCachedAt = 0;
+
+function readSystemStats({ cacheMs = 0 } = {}) {
+  if (statsCache && cacheMs > 0 && Date.now() - statsCachedAt < cacheMs) return statsCache;
   let gpu = [];
   let gpuError = null;
   try {
     if (process.platform === "win32") {
-      const args = ["--query-gpu=index,name,memory.used,memory.total,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"];
-      const candidates = [
-        "nvidia-smi",
-        path.join(process.env.SystemRoot || "C:\\Windows", "System32", "nvidia-smi.exe"),
-      ];
-      let result = null;
-      for (const command of candidates) {
-        result = spawnSync(command, args, { encoding: "utf8", windowsHide: true, timeout: 3000 });
-        if (result.status === 0) break;
+      const nvidia = readNvidiaGpuSync();
+      if (nvidia.gpu.length) {
+        gpu = nvidia.gpu;
+      } else {
+        const windows = readWindowsGpuSync();
+        gpu = windows.gpu;
+        if (!gpu.length) gpuError = windows.error || nvidia.error || "无法读取显存信息";
       }
-      if (!result || result.status !== 0) {
-        const detail = String(result?.stderr || result?.stdout || "").trim();
-        throw new Error(detail || "nvidia-smi 执行失败");
-      }
-      gpu = String(result.stdout || "")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line, index) => {
-          const [gpuIndex, name, used, total, utilization, temperature] = line.split(",").map((part) => part.trim());
-          return {
-            index: Number(gpuIndex) || index,
-            name: name || "GPU",
-            memoryUsedMb: Number(used) || 0,
-            memoryTotalMb: Number(total) || 0,
-            utilization: Number(utilization) || 0,
-            temperature: Number(temperature) || 0,
-          };
-        });
     }
   } catch (error) {
     gpuError = error?.message || String(error);
   }
   const totalBytes = os.totalmem();
   const freeBytes = os.freemem();
-  return {
+  const stats = {
     at: new Date().toISOString(),
     gpu,
     gpuError,
     ram: { totalBytes, freeBytes, usedBytes: Math.max(0, totalBytes - freeBytes) },
   };
+  statsCache = stats;
+  statsCachedAt = Date.now();
+  return stats;
 }
 
-// 关闭画布时按用户要求停止“接管”的 ComfyUI；只在画布关闭路径调用，Ctrl+C 不会触发。
+// 显式退出工作台时按配置停止“接管”的 ComfyUI；Ctrl+C 不会触发。
 function stopAdoptedComfyProcess(label) {
   const port = portFromUrl(state.adoptedComfyUrl);
   if (!port) return false;
@@ -1067,8 +1360,6 @@ async function shutdown(exitCode = 0, reason = "", { stopAdoptedComfy = false } 
   shuttingDown = true;
   if (reason) log(reason);
   log("收到退出信号，停止本启动器启动的进程…");
-  if (state.sessionTimer) clearInterval(state.sessionTimer);
-  state.sessionTimer = null;
   if (state.controlServer) {
     state.controlServer.closeAllConnections?.();
     state.controlServer.close();
@@ -1099,77 +1390,6 @@ async function shutdown(exitCode = 0, reason = "", { stopAdoptedComfy = false } 
   process.exit(exitCode);
 }
 
-// 画布页面每 5s 向网关心跳；最后一个页面关闭且无生成任务后，回收本启动器启动的后台。
-function startSessionWatchdog(cfg, gatewayUrl) {
-  if (!cfg.closeCanvasStopsBackend) {
-    log("关闭画布自动清理已禁用（closeCanvasStopsBackend=false）。");
-    return;
-  }
-  log(
-    `画布会话监控已启用：最后一个页面关闭且无任务后等待 ${cfg.canvasIdleGraceSec}s 退出；` +
-      `${cfg.stopAdoptedComfyOnCanvasClose ? "接管的 ComfyUI 也会停止" : "接管进程保留"}。`,
-  );
-  let seen = false;
-  let note = "";
-  let gatewayStartedAt = "";
-  let lastTickAt = Date.now();
-  let holdUntil = 0;
-  const tick = async () => {
-    if (shuttingDown) return;
-    const now = Date.now();
-    const gap = now - lastTickAt;
-    lastTickAt = now;
-    // 系统休眠/时钟跳变后，先等画布重新心跳，别把“刚醒”当成“已关闭”。
-    if (gap > 60000) {
-      holdUntil = now + 120000;
-      log(`检测到 ${Math.round(gap / 1000)}s 的时钟跳变（休眠/挂起），等待画布重新心跳后再判定。`);
-      return;
-    }
-    if (now < holdUntil) return;
-    const res = await httpGet(`${gatewayUrl}/api/session/status`, 2500);
-    if (!res.ok || !res.json || typeof res.json !== "object") return;
-    const status = res.json;
-    const startedAt = String(status.startedAt || "");
-    if (startedAt && gatewayStartedAt && startedAt !== gatewayStartedAt) {
-      seen = false;
-      note = "";
-      log("网关已重启，等待画布重新心跳后再启用自动退出。");
-    }
-    if (startedAt) gatewayStartedAt = startedAt;
-    if (status.seen) seen = true;
-    if (!seen) return;
-    const sessions = Number(status.count) || 0;
-    if (sessions > 0) {
-      if (note) {
-        log("画布会话已恢复，取消待退出。");
-        note = "";
-      }
-      return;
-    }
-    const activeTasks = Number(status.activeTasks) || 0;
-    if (activeTasks > 0) {
-      if (note !== `tasks:${activeTasks}`) {
-        log(`画布已关闭，但仍有 ${activeTasks} 个生成任务在跑；完成后退出。`, "WARN");
-        note = `tasks:${activeTasks}`;
-      }
-      return;
-    }
-    const idleMs = Number(status.idleMs) || 0;
-    // 只有页面显式关闭（pagehide/beacon，网关记录 closedAt）才停后台；
-    // 心跳缺失（后台标签节流/冻结、浏览器崩溃）不停，避免挂机被误杀。
-    const explicitCloseAt = Number(status.closedAt) || 0;
-    const explicitRecent = explicitCloseAt > 0 && now - explicitCloseAt < 10 * 60 * 1000;
-    if (!explicitRecent) return;
-    if (idleMs < cfg.canvasIdleGraceSec * 1000) return;
-    await shutdown(0, `画布已关闭（显式关闭信号，空闲 ${Math.round(idleMs / 1000)}s，无进行中任务），停止后台。`, {
-      stopAdoptedComfy: cfg.stopAdoptedComfyOnCanvasClose,
-    });
-  };
-  const timer = setInterval(() => void tick(), 5000);
-  if (typeof timer.unref === "function") timer.unref();
-  state.sessionTimer = timer;
-}
-
 /* ------------------------------------------------------ ComfyUI 清理重启 */
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1181,6 +1401,7 @@ async function restartComfy(cfg) {
     throw error;
   }
   state.restarting = true;
+  state.starting.comfy = true;
   const startedAt = Date.now();
   const report = { ok: false, steps: [], before: null, afterKill: null, afterStart: null };
   try {
@@ -1225,26 +1446,25 @@ async function restartComfy(cfg) {
       durationMs: Date.now() - vramStarted,
     });
 
-    const install = findComfyInstall(cfg);
-    const plan = resolveLaunchPlan(install);
-    if (!plan) throw new Error(`未找到 ComfyUI 启动方式（comfyDir=${cfg.comfyDir || "空"}）`);
     const startStarted = Date.now();
-    state.comfyChild = spawnComfy(plan, plan.kind === "python" ? port : COMFY_PORT_FIRST);
-    const ready = await waitFor(
-      "ComfyUI（重启）",
-      async () => probeAnyComfy(comfyPortCandidates(cfg), 900),
-      cfg.comfyStartTimeoutSec,
-      { intervalMs: 2000, progressEveryMs: 15000 },
-    );
-    if (!ready) throw new Error("ComfyUI 未在超时时间内重新就绪");
-    state.comfyUrl = ready.url;
+    const result = await startComfyWithFallback(cfg, {
+      preferredPort: port,
+      label: "ComfyUI（重启）",
+      timeoutSec: cfg.comfyStartTimeoutSec,
+    });
+    if (!result.ok) throw new Error(result.error);
+    state.comfyUrl = result.url;
     state.adoptedComfyUrl = null;
+    state.comfyStartError = "";
+    cfg.comfyDir = result.install.dir;
+    if (result.install.workflowsDir) cfg.comfyWorkflowsDir = result.install.workflowsDir;
+    persistDiscovery(cfg);
     report.afterStart = readSystemStats();
-    report.steps.push({ name: "重新拉起 ComfyUI", url: ready.url, durationMs: Date.now() - startStarted });
+    report.steps.push({ name: "重新拉起 ComfyUI", url: result.url, durationMs: Date.now() - startStarted });
     report.ok = true;
-    report.comfyUrl = ready.url;
+    report.comfyUrl = result.url;
     report.durationMs = Date.now() - startedAt;
-    log(`ComfyUI 清理重启完成：${ready.url}，释放显存 ${report.freedMb} MB，用时 ${Math.round(report.durationMs / 1000)}s`);
+    log(`ComfyUI 清理重启完成：${result.url}，释放显存 ${report.freedMb} MB，用时 ${Math.round(report.durationMs / 1000)}s`);
     return report;
   } catch (error) {
     try {
@@ -1253,6 +1473,7 @@ async function restartComfy(cfg) {
       /* 失败清理不覆盖原始错误 */
     }
     state.comfyChild = null;
+    state.comfyStartError = error?.message || String(error);
     report.error = error?.message || String(error);
     report.durationMs = Date.now() - startedAt;
     error.report = report;
@@ -1260,6 +1481,7 @@ async function restartComfy(cfg) {
     throw error;
   } finally {
     state.restarting = false;
+    state.starting.comfy = false;
   }
 }
 
@@ -1270,7 +1492,8 @@ async function collectStatus(cfg) {
     httpGet(`${cfg.gatewayUrl}/health`, 1500),
     httpGet(`${cfg.canvasUrl}/`, 1500),
   ]);
-  const system = readSystemStats();
+  if (comfyReachable) state.comfyStartError = "";
+  const system = readSystemStats({ cacheMs: GPU_SNAPSHOT_TTL_MS });
   return {
     ok: true,
     version: readLauncherVersion(),
@@ -1288,12 +1511,13 @@ async function collectStatus(cfg) {
       allowLan: cfg.allowLan,
       gatewayDir: cfg.gatewayDir,
       canvasDist: cfg.canvasDist,
-      closeCanvasStopsBackend: cfg.closeCanvasStopsBackend,
-      stopAdoptedComfyOnCanvasClose: cfg.stopAdoptedComfyOnCanvasClose,
+      stopAdoptedComfyOnExit: cfg.stopAdoptedComfyOnExit,
     },
     services: {
       comfy: {
         reachable: Boolean(comfyReachable),
+        starting: state.starting.comfy,
+        startError: state.comfyStartError,
         url: comfyUrl,
         managed: Boolean(state.comfyChild),
         adopted: Boolean(state.adoptedComfyUrl),
@@ -1301,6 +1525,7 @@ async function collectStatus(cfg) {
       },
       gateway: {
         reachable: Boolean(gateway.ok && gateway.json),
+        starting: state.starting.gateway,
         url: cfg.gatewayUrl,
         managed: Boolean(state.gatewayChild),
         pid: state.gatewayChild?.pid || null,
@@ -1308,6 +1533,7 @@ async function collectStatus(cfg) {
       },
       canvas: {
         reachable: Boolean(canvas.ok),
+        starting: state.starting.canvas,
         url: cfg.canvasUrl,
         managed: Boolean(state.canvasServer),
       },
@@ -1333,19 +1559,24 @@ async function startGatewayProcess(cfg) {
   const workflowsDir = cfg.comfyWorkflowsDir || "";
   state.gatewayComfyUrl = comfyUrl;
   state.gatewayWorkflowsDir = workflowsDir;
-  state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);
-  log(`控制台启动网关：PID=${state.gatewayChild.pid}`);
-  const hit = await waitFor(
-    "网关（控制台启动）",
-    async () => {
-      const res = await httpGet(`${cfg.gatewayUrl}/health`, 2000);
-      return res.ok && res.json ? { url: cfg.gatewayUrl } : null;
-    },
-    cfg.gatewayStartTimeoutSec,
-    { intervalMs: 1000, progressEveryMs: 5000 },
-  );
-  if (!hit) throw new Error("网关未在超时内就绪");
-  return { ok: true, pid: state.gatewayChild.pid, url: cfg.gatewayUrl };
+  state.starting.gateway = true;
+  try {
+    state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);
+    log(`控制台启动网关：PID=${state.gatewayChild.pid}`);
+    const hit = await waitFor(
+      "网关（控制台启动）",
+      async () => {
+        const res = await httpGet(`${cfg.gatewayUrl}/health`, 2000);
+        return res.ok && res.json ? { url: cfg.gatewayUrl } : null;
+      },
+      cfg.gatewayStartTimeoutSec,
+      { intervalMs: 1000, progressEveryMs: 5000 },
+    );
+    if (!hit) throw new Error("网关未在超时内就绪");
+    return { ok: true, pid: state.gatewayChild.pid, url: cfg.gatewayUrl };
+  } finally {
+    state.starting.gateway = false;
+  }
 }
 
 function stopGatewayProcess() {
@@ -1368,22 +1599,24 @@ async function startComfyProcess(cfg) {
     error.status = 409;
     throw error;
   }
-  const install = findComfyInstall(cfg);
-  const plan = resolveLaunchPlan(install);
-  if (!plan) throw new Error(`未找到 ComfyUI 启动方式（comfyDir=${cfg.comfyDir || "空"}）`);
-  const launchPort = plan.kind === "python" ? await pickFreePort(comfyPortCandidates(cfg)) : COMFY_PORT_FIRST;
-  state.comfyChild = spawnComfy(plan, launchPort);
-  state.adoptedComfyUrl = null;
-  log(`控制台启动 ComfyUI：PID=${state.comfyChild.pid}`);
-  const ready = await waitFor(
-    "ComfyUI（控制台启动）",
-    async () => probeAnyComfy(comfyPortCandidates(cfg), 900),
-    cfg.comfyStartTimeoutSec,
-    { intervalMs: 2000, progressEveryMs: 15000 },
-  );
-  if (!ready) throw new Error("ComfyUI 未在超时内就绪");
-  state.comfyUrl = ready.url;
-  return { ok: true, pid: state.comfyChild?.pid || null, url: ready.url };
+  state.starting.comfy = true;
+  state.comfyStartError = "";
+  try {
+    const result = await startComfyWithFallback(cfg, { label: "ComfyUI（控制台启动）", timeoutSec: cfg.comfyStartTimeoutSec });
+    if (!result.ok) throw new Error(result.error);
+    state.comfyUrl = result.url;
+    state.adoptedComfyUrl = null;
+    state.comfyStartError = "";
+    cfg.comfyDir = result.install.dir;
+    if (result.install.workflowsDir) cfg.comfyWorkflowsDir = result.install.workflowsDir;
+    persistDiscovery(cfg);
+    return { ok: true, pid: state.comfyChild?.pid || null, url: result.url };
+  } catch (error) {
+    state.comfyStartError = error?.message || String(error);
+    throw error;
+  } finally {
+    state.starting.comfy = false;
+  }
 }
 
 async function stopComfyProcess(cfg) {
@@ -1401,6 +1634,7 @@ async function stopComfyProcess(cfg) {
     stopped = true;
   }
   state.adoptedComfyUrl = null;
+  state.comfyStartError = "";
   if (!stopped && !(await probeComfy(targetUrl, 700))) return { ok: true, alreadyStopped: true };
 
   const deadline = Date.now() + 20000;
@@ -1440,9 +1674,18 @@ function tailLauncherLog(lines = 200) {
 }
 
 let consoleHtmlCache = null;
+let consoleHtmlMtime = 0;
 function readConsoleHtml() {
-  if (consoleHtmlCache === null) {
-    consoleHtmlCache = fs.readFileSync(path.join(__dirname, "console.html"), "utf8");
+  // 按修改时间刷新缓存：改完 console.html 刷新页面即可生效，不用重启启动器。
+  const file = path.join(__dirname, "console.html");
+  try {
+    const mtime = fs.statSync(file).mtimeMs;
+    if (consoleHtmlCache === null || mtime !== consoleHtmlMtime) {
+      consoleHtmlCache = fs.readFileSync(file, "utf8");
+      consoleHtmlMtime = mtime;
+    }
+  } catch {
+    if (consoleHtmlCache === null) throw new Error("console.html 读取失败");
   }
   return consoleHtmlCache;
 }
@@ -1452,6 +1695,17 @@ async function startControlServer(cfg) {
     res.setHeader("content-type", "application/json; charset=utf-8");
     try {
       const pathname = new URL(req.url, "http://127.0.0.1").pathname;
+      if (req.method === "GET" && pathname === "/app-icon.png") {
+        try {
+          const data = fs.readFileSync(path.join(__dirname, "app-icon.png"));
+          res.writeHead(200, { "content-type": "image/png", "cache-control": "max-age=3600" });
+          res.end(data);
+        } catch {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+          res.end("404 Not Found");
+        }
+        return;
+      }
       if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
         try {
           res.setHeader("content-type", "text/html; charset=utf-8");
@@ -1476,6 +1730,12 @@ async function startControlServer(cfg) {
       if (req.method === "GET" && pathname === "/api/logs") {
         const lines = Number(new URL(req.url, "http://127.0.0.1").searchParams.get("lines")) || 200;
         res.end(JSON.stringify({ ok: true, path: LOG_PATH, text: tailLauncherLog(lines) }));
+        return;
+      }
+      if (req.method === "POST" && pathname === "/clear-logs") {
+        fs.writeFileSync(LOG_PATH, "", "utf8");
+        log("启动器日志已清空");
+        res.end(JSON.stringify({ ok: true, path: LOG_PATH }));
         return;
       }
       if (req.method === "POST" && pathname === "/start-gateway") {
@@ -1514,7 +1774,7 @@ async function startControlServer(cfg) {
       if (req.method === "POST" && pathname === "/shutdown") {
         res.end(JSON.stringify({ ok: true }));
         setTimeout(() => {
-          void shutdown(0, "收到前端关闭请求，停止工作台…", { stopAdoptedComfy: cfg.stopAdoptedComfyOnCanvasClose });
+          void shutdown(0, "收到前端关闭请求，停止工作台…", { stopAdoptedComfy: cfg.stopAdoptedComfyOnExit });
         }, 300);
         return;
       }
@@ -1541,12 +1801,69 @@ async function startControlServer(cfg) {
           res.end(JSON.stringify({ ok: false, error: `目录不存在：${dir || "（空）"}` }));
           return;
         }
-        cfg.comfyDir = dir;
-        const info = comfyInstallInfo(dir);
-        if (info?.workflowsDir) cfg.comfyWorkflowsDir = info.workflowsDir;
+        const applied = applyComfyDir(cfg, dir);
+        log(`已更新 ComfyUI 目录：${applied.comfyDir}${applied.workflowsDir ? `（工作流 ${applied.workflowsDir}）` : ""}`);
+        res.end(JSON.stringify({ ok: true, comfyDir: applied.comfyDir, workflowsDir: applied.workflowsDir, restartRequired: true }));
+        return;
+      }
+      if (req.method === "POST" && pathname === "/pick-comfy-dir") {
+        res.setTimeout(300000);
+        try {
+          const selected = await pickComfyDirectory(cfg.comfyDir || "");
+          if (!selected) {
+            res.end(JSON.stringify({ ok: true, canceled: true }));
+            return;
+          }
+          if (!isDir(selected)) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ ok: false, error: `目录不存在：${selected}` }));
+            return;
+          }
+          const applied = applyComfyDir(cfg, selected);
+          log(`已选择 ComfyUI 启动路径：${selected}${applied.workflowsDir ? `（工作流 ${applied.workflowsDir}）` : ""}`);
+          res.end(
+            JSON.stringify({
+              ok: true,
+              path: selected,
+              comfyDir: applied.comfyDir,
+              workflowsDir: applied.workflowsDir,
+              detected: applied.detected,
+              plan: applied.plan ? { kind: applied.plan.kind, file: applied.plan.file } : null,
+            })
+          );
+        } catch (error) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ ok: false, error: error.message }));
+        }
+        return;
+      }
+      if (req.method === "POST" && pathname === "/set-comfy-workflows-dir") {
+        const body = await new Promise((resolve) => {
+          let raw = "";
+          req.setEncoding("utf8");
+          req.on("data", (chunk) => {
+            raw += chunk;
+            if (raw.length > 8192) req.destroy();
+          });
+          req.on("end", () => {
+            try {
+              resolve(JSON.parse(raw || "{}"));
+            } catch {
+              resolve({});
+            }
+          });
+          req.on("error", () => resolve({}));
+        });
+        const raw = String(body.dir || "").trim();
+        if (raw && !isDir(raw)) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, error: `目录不存在：${raw}` }));
+          return;
+        }
+        cfg.comfyWorkflowsDir = raw ? path.resolve(raw) : "";
         persistDiscovery(cfg);
-        log(`已更新 ComfyUI 目录：${cfg.comfyDir}${cfg.comfyWorkflowsDir ? `（工作流 ${cfg.comfyWorkflowsDir}）` : ""}`);
-        res.end(JSON.stringify({ ok: true, comfyDir: cfg.comfyDir, workflowsDir: cfg.comfyWorkflowsDir, restartRequired: true }));
+        log(`已更新工作流目录：${cfg.comfyWorkflowsDir || "（未设置）"}`);
+        res.end(JSON.stringify({ ok: true, workflowsDir: cfg.comfyWorkflowsDir }));
         return;
       }
       if (req.method === "POST" && pathname === "/restart-comfy") {
@@ -1587,7 +1904,9 @@ function fmtStatus(mode) {
 }
 
 async function main() {
+  const rotatedTo = rotateLauncherLog();
   log(`===== 本地一键启动器 ${DRY_RUN ? "[dry-run] " : ""}=====`);
+  if (rotatedTo) log(`启动器日志超过 5MB，已轮转到 ${rotatedTo}`);
   log(`工作区：${ROOT}`);
   log(`Node：${process.execPath} (${process.version})`);
 
@@ -1609,6 +1928,7 @@ async function main() {
   let comfy = null;
   if (comfyHit) {
     comfy = { url: comfyHit.url, mode: "adopt" };
+    state.comfyStartError = "";
     log(`ComfyUI 已在运行（${comfyHit.url}，${comfyHit.via}）→ 接管，不重复启动`);
   } else {
     log("ComfyUI 未运行（8188–8199 与 config.comfyUrl 均无响应）");
@@ -1654,18 +1974,15 @@ async function main() {
     if (installed.length) log(`已自动放置 ${installed.length} 个内置节点包${comfy ? "；ComfyUI 已在运行，重启后生效" : ""}`);
   }
   if (!comfy) {
-    if (!comfyInstall) {
-      log("未找到 ComfyUI 安装目录（已查环境变量 COMFYUI_DIR、config.comfyDir、C/D/E:\\ComfyUI、" +
-        "%USERPROFILE%\\ComfyUI、%USERPROFILE%\\Documents\\ComfyUI、E:\\ComfyUI_windows_portable、" +
-        "E:\\ComfyUI\\ComfyUI）。", "ERROR");
-      log("请安装/解压 ComfyUI 后重试，或在 launcher/config.json 里填写 comfyDir。", "ERROR");
-      log("继续启动网关；完成后会打开 /admin 让你查看真实状态（不会假装 ComfyUI 已就绪）。", "WARN");
-      comfy = { url: cfg.comfyUrl, mode: "missing" };
-    } else {
+    if (DRY_RUN) {
       const plan = resolveLaunchPlan(comfyInstall);
-      if (!plan) {
+      if (!comfyInstall) {
+        log("未找到 ComfyUI 安装目录（已查环境变量 COMFYUI_DIR、config.comfyDir、C/D/E:\\ComfyUI、" +
+          "%USERPROFILE%\\ComfyUI、%USERPROFILE%\\Documents\\ComfyUI、E:\\ComfyUI_windows_portable、" +
+          "E:\\ComfyUI\\ComfyUI）。", "ERROR");
+        comfy = { url: cfg.comfyUrl, mode: "missing" };
+      } else if (!plan) {
         log(`找到 ComfyUI 目录 ${comfyInstall.dir}，但没找到可用的启动方式（启动脚本 / python_embeded+main.py / 桌面版 exe）`, "ERROR");
-        log("可手动启动 ComfyUI 后重跑本脚本；继续启动网关并打开 /admin。", "WARN");
         comfy = { url: cfg.comfyUrl, mode: "missing" };
       } else {
         const launchPort = plan.kind === "python" ? await pickFreePort(comfyPortCandidates(cfg)) : COMFY_PORT_FIRST;
@@ -1677,28 +1994,29 @@ async function main() {
         log(`ComfyUI 安装目录：${comfyInstall.dir}`);
         log(`ComfyUI 启动方式：${planLabel}`);
         if (comfyInstall.workflowsDir) log(`ComfyUI 用户工作流目录：${comfyInstall.workflowsDir}`);
-
-        if (DRY_RUN) {
-          log(`[dry-run] 将启动 ComfyUI：${planLabel}（cwd=${comfyInstall.dir}，等待 /system_stats 最多 ${cfg.comfyStartTimeoutSec}s）`);
-          comfy = { url: `http://127.0.0.1:${launchPort}`, mode: "planned" };
+        log(`[dry-run] 将启动 ComfyUI：${planLabel}（cwd=${plan.cwd}，等待 /system_stats 最多 ${cfg.comfyStartTimeoutSec}s）`);
+        comfy = { url: `http://127.0.0.1:${launchPort}`, mode: "planned" };
+      }
+    } else {
+      state.starting.comfy = true;
+      state.comfyStartError = "";
+      try {
+        const result = await startComfyWithFallback(cfg, { label: "ComfyUI", timeoutSec: cfg.comfyStartTimeoutSec });
+        if (result.ok) {
+          comfy = { url: result.url, mode: "started" };
+          state.comfyStartError = "";
+          cfg.comfyDir = result.install.dir;
+          if (result.install.workflowsDir) cfg.comfyWorkflowsDir = result.install.workflowsDir;
+          persistDiscovery(cfg);
+          log(`ComfyUI 已启动：${result.url}`);
         } else {
-          log(`启动 ComfyUI（detached）：${planLabel}`);
-          state.comfyChild = spawnComfy(plan, launchPort);
-          log(`ComfyUI 子进程 PID=${state.comfyChild.pid}，等待 /system_stats（上限 ${cfg.comfyStartTimeoutSec}s）`);
-          comfy = await waitFor(
-            "ComfyUI",
-            async () => probeAnyComfy(comfyPortCandidates(cfg), 900),
-            cfg.comfyStartTimeoutSec,
-            { intervalMs: 3000, progressEveryMs: 20000 }
-          );
-          if (comfy) {
-            comfy.mode = "started";
-            log(`ComfyUI 已启动：${comfy.url}`);
-          } else {
-            comfy = { url: `http://127.0.0.1:${launchPort}`, mode: "missing" };
-            log("ComfyUI 启动后未在超时内就绪，继续启动网关，稍后可在 /admin 查看状态。", "WARN");
-          }
+          comfy = { url: cfg.comfyUrl, mode: "missing" };
+          state.comfyStartError = result.error;
+          log(`ComfyUI 启动失败：${result.error}`, "ERROR");
+          log("继续启动网关；可在控制台「选择 ComfyUI 路径」后重试。", "WARN");
         }
+      } finally {
+        state.starting.comfy = false;
       }
     }
   }
@@ -1715,41 +2033,46 @@ async function main() {
 
     if (DRY_RUN) {
       log(
-        `[dry-run] 将启动网关：${process.execPath} ${path.join(cfg.gatewayDir, "src", "server.js")} ` +
-          `（cwd=${cfg.gatewayDir}，PORT=${cfg.gatewayPort}，COMFY_URL=${comfyUrl}，等待 /health 最多 ${cfg.gatewayStartTimeoutSec}s）`
+        `[dry-run] 将启动网关：${process.execPath} ${path.join(cfg.gatewayDir, "server", "dist", "server.js")} ` +
+          `（cwd=${path.join(cfg.gatewayDir, "server")}，PORT=${cfg.gatewayPort}，COMFY_URL=${comfyUrl}，等待 /health 最多 ${cfg.gatewayStartTimeoutSec}s）`
       );
       gatewayResult = { url: cfg.gatewayUrl, mode: "planned" };
     } else {
-      log(`启动网关：${path.join(cfg.gatewayDir, "src", "server.js")}（PORT=${cfg.gatewayPort}，COMFY_URL=${comfyUrl}）`);
+      state.starting.gateway = true;
       try {
-        await ensureGatewayDeps(cfg);
-        state.gatewayComfyUrl = comfyUrl;
-      state.gatewayWorkflowsDir = workflowsDir;
-      state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);
-      } catch (err) {
-        log(err.message, "ERROR");
-        log("网关无法启动，画布即便打开也无法生成内容；请修复后重试。", "ERROR");
-        await shutdown(1);
-        return;
+        log(`启动网关：${path.join(cfg.gatewayDir, "server", "dist", "server.js")}（PORT=${cfg.gatewayPort}，COMFY_URL=${comfyUrl}）`);
+        try {
+          await ensureGatewayDeps(cfg);
+          state.gatewayComfyUrl = comfyUrl;
+          state.gatewayWorkflowsDir = workflowsDir;
+          state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);
+        } catch (err) {
+          log(err.message, "ERROR");
+          log("网关无法启动，画布即便打开也无法生成内容；请修复后重试。", "ERROR");
+          await shutdown(1);
+          return;
+        }
+        log(`网关子进程 PID=${state.gatewayChild.pid}，等待 /health（上限 ${cfg.gatewayStartTimeoutSec}s）`);
+        const hit = await waitFor(
+          "网关",
+          async () => {
+            const res = await httpGet(`${cfg.gatewayUrl}/health`, 2000);
+            return res.ok && res.json ? { url: cfg.gatewayUrl } : null;
+          },
+          cfg.gatewayStartTimeoutSec,
+          { intervalMs: 1500, progressEveryMs: 10000 }
+        );
+        if (!hit) {
+          log(`网关启动失败，请查看 launcher/launcher.log 与上方 [gateway] 日志。`, "ERROR");
+          await shutdown(1);
+          return;
+        }
+        gatewayResult = { url: cfg.gatewayUrl, mode: "started" };
+        log(`网关已启动：${cfg.gatewayUrl}/health`);
+        if (comfyReady) log(`已向网关注入 COMFY_URL=${comfyUrl}`);
+      } finally {
+        state.starting.gateway = false;
       }
-      log(`网关子进程 PID=${state.gatewayChild.pid}，等待 /health（上限 ${cfg.gatewayStartTimeoutSec}s）`);
-      const hit = await waitFor(
-        "网关",
-        async () => {
-          const res = await httpGet(`${cfg.gatewayUrl}/health`, 2000);
-          return res.ok && res.json ? { url: cfg.gatewayUrl } : null;
-        },
-        cfg.gatewayStartTimeoutSec,
-        { intervalMs: 1500, progressEveryMs: 10000 }
-      );
-      if (!hit) {
-        log(`网关启动失败，请查看 launcher/launcher.log 与上方 [gateway] 日志。`, "ERROR");
-        await shutdown(1);
-        return;
-      }
-      gatewayResult = { url: cfg.gatewayUrl, mode: "started" };
-      log(`网关已启动：${cfg.gatewayUrl}/health`);
-      if (comfyReady) log(`已向网关注入 COMFY_URL=${comfyUrl}`);
     }
   }
 
@@ -1778,12 +2101,15 @@ async function main() {
         log(`写入运行时网关配置失败：${error.message}`, "WARN");
       }
       let listen;
+      state.starting.canvas = true;
       try {
         listen = await listenCanvasServer(cfg, cfg.canvasPort);
       } catch (error) {
         log(`画布静态服务启动失败：${error.message}`, "ERROR");
         await shutdown(1);
         return;
+      } finally {
+        state.starting.canvas = false;
       }
       if (listen.port !== cfg.canvasPort) {
         log(`画布端口 ${cfg.canvasPort} 已被其他程序占用，改用空闲端口 ${listen.port}`);
@@ -1804,10 +2130,9 @@ async function main() {
   log(`画布    : ${fmtStatus(canvasResult.mode)}  ${canvasResult.url}`);
   if (state.controlServer) log(`控制台  : 已启动  ${cfg.controlUrl}/`);
   log("------------------------------------------");
-  if (!DRY_RUN) startSessionWatchdog(cfg, gatewayResult.url);
 
   const consoleReady = Boolean(state.controlServer);
-  const target = consoleReady && cfg.openConsole ? `${cfg.controlUrl}/` : comfyReady ? `${canvasResult.url}/` : `${cfg.gatewayUrl}/admin`;
+  const target = consoleReady && cfg.openConsole ? `${cfg.controlUrl}/` : comfyReady ? `${canvasResult.url}/canvas` : `${cfg.gatewayUrl}/admin`;
   if (!comfyReady) {
     log("ComfyUI 未就绪：控制台会显示真实状态；也可打开 /admin 查看网关。", "WARN");
   }
@@ -1821,7 +2146,7 @@ async function main() {
   else if (consoleReady) log(`config.openBrowser=false，启动器控制台：${cfg.controlUrl}/`);
   else log(`config.openBrowser=false，未自动打开：${target}`);
 
-  log("启动器前台运行中。按 Ctrl+C 只停止本启动器启动的进程；关闭画布最后一个页面会按配置停止后台（含接管的 ComfyUI）。");
+  log("启动器前台运行中。关闭画布不会停止后台；按 Ctrl+C 或从托盘退出时才会停止本启动器启动的进程。");
 
   await new Promise((resolve) => {
     process.on("SIGINT", () => {
@@ -1852,4 +2177,4 @@ if (invokedDirectly) {
   });
 }
 
-export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer, isLoopbackHost, normalizeHost, browseHostFor };
+export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer, isLoopbackHost, normalizeHost, browseHostFor, gpuFromWindowsSnapshot, readSystemStats };

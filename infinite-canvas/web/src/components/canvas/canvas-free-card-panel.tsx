@@ -3,6 +3,7 @@ import { App, Button, Popover, Select } from "antd";
 import { Archive, ExternalLink, RefreshCw, Settings2, Sparkles, Square, ArrowUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { GATEWAY_ADMIN_URL } from "@/constant/app-mode";
 import { CanvasNodeReferenceBar } from "@/components/canvas/canvas-node-reference-bar";
 import { PromptOptimizeOptions } from "@/components/canvas/prompt-optimize-options";
 import { ImageSettingsPanel, ImageSettingsTheme, OptionPill } from "@/components/image-settings-panel";
@@ -533,7 +534,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                         onEngineChange={(engine) => updateConfig("promptApiEngine", engine)}
                                         onLanguageChange={(language) => updateConfig("promptOptimizeLanguage", language)}
                                         onOpenSettings={() => openConfigDialog(true, "cloud-api")}
-                                        onOpenLocalSettings={() => openConfigDialog(false, "resources")}
+                                        onOpenLocalSettings={() => window.open(GATEWAY_ADMIN_URL, "_blank", "noopener")}
                                         onStart={() => void optimizePrompt()}
                                         onClose={() => setOptimizeOptionsOpen(false)}
                                     />

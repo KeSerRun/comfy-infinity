@@ -26,11 +26,14 @@ Infinite Canvas :3000
 - `GET /v1/videos/:id`、`GET /v1/videos/:id/content`、`POST /v1/videos/:id/cancel`
 - `POST /v1/prompts/optimize`、`POST /v1/prompts/optimize-image`
 - `GET /api/setup/status`、`GET /api/workflows`、`GET /api/workflows/:id/schema`
-- `GET /api/system/stats`、`POST /api/system/free-memory`、`POST /api/system/restart-comfy`、`POST /api/system/shutdown`
+- `GET /api/workflow-files/raw`、`GET /api/workflow-files/open`（在 ComfyUI 中打开任意内置或已发现工作流）
+- `GET /api/system/stats`、`POST /api/system/free-memory`、`POST /api/system/restart-comfy`
 - `GET /api/loras`
-- 管理页：`/admin`
+- 管理页：`/admin`（工作流浏览、ComfyUI 目录配置）
 
 ## 工作流
+
+管理页会直接列出 `workflows/` 顶层以及已选 ComfyUI 工作流目录中的 JSON 文件，不再有导入或注册接口。`workflows/registry.json` 仅作为内置工作流的绑定/参数元数据，不会被管理页写入。工作流表格支持搜索、每页 5 条分页，以及每行的「修复」按钮：点击后通过桥接扩展在 ComfyUI 中打开该工作流，便于补齐缺失模型或节点。
 
 `workflows/registry.json` 当前包含 12 个条目，分为：
 
@@ -43,13 +46,58 @@ Infinite Canvas :3000
 
 ## 安装与运行
 
+正常情况下由根目录的 `start-desktop.bat` 自动拉起网关，无需单独启动。仅在调试网关本身时直接运行：
+
 ```bash
-cd comfyui-gateway
+cd comfyui-gateway/server
 npm install
-node src/server.js
+npm run build
+npm start
 ```
 
 默认连接 `http://127.0.0.1:8188`，监听 `127.0.0.1:8190`。
+
+### 工程结构
+
+```text
+server/                 后端工程
+  package.json          npm 脚本与依赖
+  tsconfig.json
+  src/
+    server.ts           网关入口（Express 路由与启动）
+    config.ts           配置、环境变量与日志
+    comfy/              ComfyUI 客户端、桥接、运行器、预览、会话、步数规划
+    models/             底模、LoRA、模型匹配与路径
+    workflows/          工作流注册表、自由卡片、UI→API 转换、参数绑定
+    resources/          资源安装、目录扫描、初始化
+    prompts/            提示词优化、布局提示词
+    system/             任务、上传、系统状态、视频插帧
+    shared/             通用工具
+  dist/                 tsc 构建产物，启动器直接运行 server/dist/server.js
+  test/                 后端测试与 mock ComfyUI
+  scripts/              构建清理、工作流转换、TRT 编译辅助
+admin/                  管理页源码（Vite + React + TypeScript）
+admin/dist/             管理页构建产物，由网关在 /admin 静态托管
+resources/ workflows/ prompts/ data/ comfyui-bridge/   共享数据与资源
+```
+
+`npm run build` 会先清空 `server/dist/` 再编译，避免目录调整后残留旧文件。
+
+在网关根目录下修改后端源码后运行：
+
+```bash
+cd server && npm run build
+```
+
+修改管理页后运行：
+
+```bash
+cd admin
+npm install
+npm run build
+```
+
+管理页开发模式（Vite 代理到 `127.0.0.1:8190`）：`cd admin && npm run dev`。
 
 常用环境变量：
 
@@ -57,8 +105,9 @@ node src/server.js
 |---|---|---|
 | `PORT` / `HOST` | `8190` / `127.0.0.1` | 网关监听地址 |
 | `COMFY_URL` | `http://127.0.0.1:8188` | ComfyUI 地址 |
-| `COMFY_WORKFLOWS_DIR` | 空 | ComfyUI 用户工作流目录，用于自动发现 API 工作流 |
-| `LAUNCHER_CONTROL_URL` | 空 | 启动器控制地址，由 `start-local.bat` 注入 |
+| `COMFY_WORKFLOWS_DIR` | 空 | ComfyUI 用户工作流目录，用于自动发现 API 工作流；也可在管理页「ComfyUI 目录」第一页修改，保存后会同步到 `launcher/config.json` |
+| `COMFY_WORKFLOWS_DIRS` | 空 | 多个工作流目录，用换行、分号或逗号分隔；管理页第一页的工作流目录支持多行多个，会覆盖这里的单目录设置 |
+| `LAUNCHER_CONTROL_URL` | 空 | 启动器控制地址，由桌面启动器注入 |
 | `REQUEST_TIMEOUT_MS` | `600000` | 图片请求超时 |
 | `VIDEO_TIMEOUT_MS` | `0` | 视频超时；0 表示不设上限 |
 | `POLL_INTERVAL_MS` | `750` | `/history` 轮询间隔 |
@@ -73,12 +122,13 @@ node src/server.js
 
 ```bash
 # 终端 A
-cd comfyui-gateway/mock
-node comfyui-mock.mjs --port 18188 --delay 300
+cd comfyui-gateway/server
+node test/mock/comfyui-mock.mjs --port 18188 --delay 300
 
 # 终端 B
-cd comfyui-gateway
-COMFY_URL=http://127.0.0.1:18188 node src/server.js
+cd comfyui-gateway/server
+npm run build
+COMFY_URL=http://127.0.0.1:18188 node dist/server.js
 ```
 
 Mock 只验证协议与占位图，不验证真实出图质量。
@@ -90,9 +140,11 @@ Mock 只验证协议与占位图，不验证真实出图质量。
 ## 测试
 
 ```bash
-cd comfyui-gateway
+cd comfyui-gateway/server
 npm test
 ```
+
+测试会先执行 `npm run build`，再针对 `dist/` 运行 `node --test`。
 
 ## 安全
 

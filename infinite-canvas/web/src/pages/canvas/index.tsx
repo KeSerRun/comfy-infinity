@@ -63,7 +63,8 @@ export default function CanvasPage() {
     useEffect(() => {
         if (!hydrated || autoOpenRef.current || (mode !== "new" && mode !== "recent")) return;
         autoOpenRef.current = true;
-        enterProject(mode === "new" ? createProject(t("canvas.defaultTitle", { count: projects.length + 1 })) : projects[0]?.id || createProject(t("canvas.defaultTitle", { count: projects.length + 1 })));
+        const latest = projects.reduce<(typeof projects)[number] | null>((best, project) => (!best || project.updatedAt > best.updatedAt ? project : best), null);
+        enterProject(mode === "new" ? createProject(t("canvas.defaultTitle", { count: projects.length + 1 })) : latest?.id || createProject(t("canvas.defaultTitle", { count: projects.length + 1 })));
     }, [createProject, hydrated, mode, projects, t]);
 
     if (hydrated && (mode === "new" || mode === "recent")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">{t("canvas.opening")}</main>;

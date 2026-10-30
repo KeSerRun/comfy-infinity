@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 
 const LOADED_KEY = "__localCanvasOpenWorkflowLoaded";
 const PARAM_ID = "local_canvas_open";
+const PARAM_FILE = "local_canvas_file";
 const PARAM_GATEWAY = "local_canvas_gw";
 const DEBOUNCE_MS = 900;
 const FALLBACK_MS = 12000;
@@ -32,7 +33,8 @@ function showError(message) {
 function readTarget() {
   const params = new URLSearchParams(window.location.search);
   const id = params.get(PARAM_ID);
-  if (!id) return null;
+  const file = params.get(PARAM_FILE);
+  if (!id && !file) return null;
   let gateway;
   try {
     gateway = new URL(params.get(PARAM_GATEWAY) || "", window.location.href);
@@ -43,12 +45,13 @@ function readTarget() {
   const sameHost = gateway.hostname === window.location.hostname;
   const loopback = gateway.hostname === "127.0.0.1" || gateway.hostname === "localhost" || gateway.hostname === "::1" || gateway.hostname === "[::1]";
   if (!sameHost && !loopback) return null;
-  return { id, gateway: gateway.origin };
+  return id ? { id, gateway: gateway.origin } : { file, gateway: gateway.origin };
 }
 
 function cleanUrl() {
   const url = new URL(window.location.href);
   url.searchParams.delete(PARAM_ID);
+  url.searchParams.delete(PARAM_FILE);
   url.searchParams.delete(PARAM_GATEWAY);
   window.history.replaceState(window.history.state, "", url.toString());
 }
@@ -65,19 +68,22 @@ async function loadRequestedWorkflow() {
   if (!target) return;
   window[LOADED_KEY] = true;
   try {
-    const response = await fetch(`${target.gateway}/api/free-workflows/${encodeURIComponent(target.id)}/ui`, { cache: "no-store" });
+    const endpoint = target.file
+      ? `${target.gateway}/api/workflow-files/raw?file=${encodeURIComponent(target.file)}`
+      : `${target.gateway}/api/free-workflows/${encodeURIComponent(target.id)}/ui`;
+    const response = await fetch(endpoint, { cache: "no-store" });
     if (!response.ok) throw new Error(`网关返回 HTTP ${response.status}`);
     const data = await response.json();
     if (!data?.workflow) throw new Error("工作流内容为空");
     if (data.format === "api" || looksLikeApiWorkflow(data.workflow)) {
-      await app.loadApiJson(data.workflow, data.name || "自由工作流");
+      await app.loadApiJson(data.workflow, data.name || "工作流");
     } else {
       await app.loadGraphData(data.workflow, true, true, data.sourceRel || null);
     }
     cleanUrl();
   } catch (error) {
     window[LOADED_KEY] = false;
-    showError(`无法自动打开工作流「${target.id}」：${error?.message || error}`);
+    showError(`无法自动打开工作流「${target.id || target.file}」：${error?.message || error}`);
   }
 }
 

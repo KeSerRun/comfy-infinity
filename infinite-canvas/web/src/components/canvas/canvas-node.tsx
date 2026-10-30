@@ -551,7 +551,8 @@ export const CanvasNode = React.memo(function CanvasNode({
 
                 {showImageInfo && hasImageContent ? <ImageInfoBar node={data} /> : null}
 
-                {!isGroup && !hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
+                {/* 底部渐隐用卡片自身底色，避免把画布颜色盖到卡片上、看起来像卡片透明 */}
+                {!isGroup && !transparentBg && !artSkin && !hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.node.fill}, transparent)` }} /> : null}
 
                 {referenceSelectionState && (referenceSelectionState !== "available" || hovered) ? (
                     <div className="pointer-events-none absolute inset-0 z-[60] grid place-items-center rounded-[inherit]" style={{ background: `color-mix(in srgb, ${theme.canvas.background} ${referenceSelectionState === "target" ? 78 : referenceSelectionState === "disabled" ? 60 : 34}%, transparent)`, boxShadow: referenceSelectionState === "available" ? `inset 0 0 0 2px ${selectionBlue}` : undefined }}>
@@ -658,8 +659,10 @@ function FreeCardNodeContent({ node, theme }: NodeContentRendererProps) {
     const info = node.metadata?.freeCard;
     const cardSkin = useEffectiveCardSkin();
     const fishSkin = cardSkin === "fish";
+    const artSkin = fishSkin || cardSkin === "angel";
     const kind = info ? (info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : info.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")) : t("canvas.freeCard.emptyHint");
-    if (fishSkin) {
+    // 艺术皮肤把中间的装饰标语和右侧立绘让出来，卡片内容收在左上角，避免文字互相压住。
+    if (artSkin) {
         return (
             <div className="flex h-full w-full flex-col items-start justify-start gap-1 px-4 pt-4 text-left">
                 <div className="flex items-center gap-1.5">
@@ -668,7 +671,7 @@ function FreeCardNodeContent({ node, theme }: NodeContentRendererProps) {
                         {kind}
                     </span>
                 </div>
-                <div className="max-w-[72%] truncate text-sm font-semibold drop-shadow-[0_2px_6px_rgba(0,8,18,.8)]" style={{ color: theme.node.text }}>
+                <div className={`max-w-[72%] truncate text-sm font-semibold ${fishSkin ? "drop-shadow-[0_2px_6px_rgba(0,8,18,.8)]" : ""}`} style={{ color: theme.node.text }}>
                     {info?.name || t("canvas.freeCard.emptyTitle")}
                 </div>
             </div>

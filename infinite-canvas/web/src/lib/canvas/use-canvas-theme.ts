@@ -1,11 +1,8 @@
 import { getCanvasTheme, type CardSkinId } from "@/lib/canvas-theme";
-import { isCardSkinLocked } from "@/lib/canvas/skin-unlocks";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 export function useEffectiveCardSkin(): CardSkinId {
-    const cardSkin = useThemeStore((state) => state.cardSkin);
-    const unlockedCardSkins = useThemeStore((state) => state.unlockedCardSkins);
-    return isCardSkinLocked(cardSkin) && !unlockedCardSkins.includes(cardSkin) ? "warm" : cardSkin;
+    return useThemeStore((state) => state.cardSkin);
 }
 
 export function useCanvasTheme() {

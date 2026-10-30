@@ -5,9 +5,10 @@ node_modules/
 # local runtime state
 launcher/config.json
 launcher/launcher.log
+launcher/launcher.log.*
 comfyui-gateway/data/
 comfyui-gateway/samples/
-comfyui-gateway/test/.tmp/
+comfyui-gateway/server/test/.tmp/
 *.log
 *.tsbuildinfo
 
@@ -17,6 +18,7 @@ comfyui-gateway/test/.tmp/
 !.env.example
 
 # generated output (the committed web/dist is a release artifact)
+launcher/desktop/dist/
 infinite-canvas/.next/
 infinite-canvas/out/
 infinite-canvas/plugins/canvas/*/dist/
@@ -31,9 +33,10 @@ infinite-canvas/web/dist/config.js
 # local test artifacts
 tmp-*
 
-# bundled model files: shipped inside the distribution package, too large for git
+# local model files are downloaded from resources/index.json, never committed
 comfyui-gateway/resources/bundled/
 comfyui-gateway/resources/loras/*.safetensors
+comfyui-gateway/resources/vae_approx/*.safetensors
 
 # bundled runtime / agent metadata
 node/

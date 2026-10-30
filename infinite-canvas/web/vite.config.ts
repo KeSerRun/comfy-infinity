@@ -4,14 +4,10 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
-import { parseChangelog } from "./src/lib/release";
-
 const webDir = dirname(fileURLToPath(import.meta.url));
 const appRoot = resolve(webDir, "../..");
 const versionPath = existsSync(resolve(appRoot, "VERSION")) ? resolve(appRoot, "VERSION") : resolve(webDir, "../VERSION");
-const changelogPath = existsSync(resolve(appRoot, "CHANGELOG.md")) ? resolve(appRoot, "CHANGELOG.md") : resolve(webDir, "../CHANGELOG.md");
 const localVersion = readFileSync(versionPath, "utf8").trim() || "dev";
-const localChangelog = readFileSync(changelogPath, "utf8");
 
 // Expose /plugins/index.json with local plugin files from public/plugins.
 // The frontend can discover and list them when enabled; development reads the directory live, while builds emit a static registry.
@@ -51,6 +47,5 @@ export default defineConfig({
     },
     define: {
         __APP_VERSION__: JSON.stringify(localVersion),
-        __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
     },
 });

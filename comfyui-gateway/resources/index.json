@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.30-29",
+  "version": "2026.10.30-30",
   "channel": "stable",
   "updatedAt": "2026-10-30",
   "packs": [
@@ -233,7 +233,7 @@
     {
       "id": "h3",
       "label": "H3 视频生成（VDN / 无VDN / 角色替换）",
-      "description": "H3 视频生成：7 条工作流（VDN 三档 / 无VDN 三档 / 角色替换）。节点和 TRT ONNX 随包，权重按工作流下载；装好后自动调用本机 TensorRT 编译 decoder/encoder engine（每台机器一次，GPU/TRT 版本相关，不随包）。",
+      "description": "H3 视频生成：7 条工作流（VDN 三档 / 无VDN 三档 / 角色替换）。节点随包，TRT ONNX 与模型权重按工作流下载；装好后自动调用本机 TensorRT 编译 decoder/encoder engine（每台机器一次，GPU/TRT 版本相关，不随包）。",
       "planned": false,
       "resources": [
         "h3_unet_singularity_ref2va_v13_int8",
@@ -853,14 +853,10 @@
       "size": 145157232,
       "sha256": "52e41bc8ab3964b11104332bc7fc742571e5fd1eaf7bc046285a5b37c56d3020",
       "license": "未知（社区 LoRA）",
-      "note": "可选；随包分发（魔搭资源集为私有，匿名不可用）。",
+      "note": "可选；从 Hugging Face 下载（hf-mirror 备源）。",
       "sources": [
-        {
-          "kind": "bundled",
-          "path": "resources/loras/KOOK-MOSS-SFT-观澜.safetensors",
-          "label": "随包"
-        },
-        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/loras/KOOK-MOSS-SFT-%E8%A7%82%E6%BE%9C.safetensors"
+        "https://hf-mirror.com/RunningHubAI/rh-kook-moss-sft-lora/resolve/main/KOOK-MOSS-SFT-%E8%A7%82%E6%BE%9C.safetensors",
+        "https://huggingface.co/RunningHubAI/rh-kook-moss-sft-lora/resolve/main/KOOK-MOSS-SFT-%E8%A7%82%E6%BE%9C.safetensors"
       ]
     },
     {
@@ -1040,13 +1036,8 @@
       "target": "vae/minimax_h3_vae_decoder.onnx",
       "size": 1609440,
       "license": "MiniMax H3 Community License",
-      "note": "用于本机编译 TRT VAE engine；魔搭无源，随包分发（hf-mirror 为备源）。",
+      "note": "用于本机编译 TRT VAE engine；从 Hugging Face 下载（hf-mirror 备源）。",
       "sources": [
-        {
-          "kind": "bundled",
-          "path": "resources/bundled/h3-vae/minimax_h3_vae_decoder.onnx",
-          "label": "随包"
-        },
         "https://hf-mirror.com/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx",
         "https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx"
       ]
@@ -1058,13 +1049,8 @@
       "target": "vae/minimax_h3_vae_decoder.onnx.data",
       "size": 4847062144,
       "license": "MiniMax H3 Community License",
-      "note": "decoder 外置权重；与 .onnx 同目录；魔搭无源，随包分发。",
+      "note": "decoder 外置权重；与 .onnx 同目录；从 Hugging Face 下载。",
       "sources": [
-        {
-          "kind": "bundled",
-          "path": "resources/bundled/h3-vae/minimax_h3_vae_decoder.onnx.data",
-          "label": "随包"
-        },
         "https://hf-mirror.com/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx.data",
         "https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx.data"
       ]
@@ -1076,13 +1062,8 @@
       "target": "vae/minimax_h3_vae_encoder.onnx",
       "size": 361041889,
       "license": "MiniMax H3 Community License",
-      "note": "用于本机编译 TRT VAE engine；魔搭无源，随包分发（hf-mirror 为备源）。",
+      "note": "用于本机编译 TRT VAE engine；从 Hugging Face 下载（hf-mirror 备源）。",
       "sources": [
-        {
-          "kind": "bundled",
-          "path": "resources/bundled/h3-vae/minimax_h3_vae_encoder.onnx",
-          "label": "随包"
-        },
         "https://hf-mirror.com/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_encoder.onnx",
         "https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_encoder.onnx"
       ]
@@ -1284,13 +1265,10 @@
       "size": 9791388,
       "sha256": "f0f60fa072089997f817402098c2fd90777cb2660dd79cf5df42fc1e3e08e527",
       "license": "MiniMax H3 Community License",
-      "note": "VDN/无VDN 工作流的预览解码用；随包分发（9.8MB）。",
+      "note": "VDN/无VDN 工作流的预览解码用；从 Hugging Face 下载（hf-mirror 备源）。",
       "sources": [
-        {
-          "kind": "bundled",
-          "path": "resources/vae_approx/taeh3.safetensors",
-          "label": "随包"
-        }
+        "https://hf-mirror.com/Kijai/MiniMax-H3-TAE/resolve/main/vae_approx/taeh3.safetensors",
+        "https://huggingface.co/Kijai/MiniMax-H3-TAE/resolve/main/vae_approx/taeh3.safetensors"
       ]
     },
     {

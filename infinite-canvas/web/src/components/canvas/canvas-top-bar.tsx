@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
-import { Button, Dropdown, Modal, Tooltip } from "antd";
+import { Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { CanvasSystemStatus } from "@/components/canvas/canvas-system-status";
-import { WorkbenchShutdownButton } from "@/components/canvas/workbench-shutdown-button";
+import { WorkbenchCanvasButton } from "@/components/canvas/workbench-canvas-button";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -131,7 +131,7 @@ export function CanvasTopBar({
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
                     <CanvasSystemStatus />
-                    <WorkbenchShutdownButton />
+                    <WorkbenchCanvasButton />
                     <UserStatusActions variant="canvas" onOpenShortcuts={() => setShortcutsOpen(true)} />
                 </div>
             </div>

@@ -92,14 +92,7 @@ export type AiConfig = {
     params?: Record<string, unknown>;
 };
 
-export type WebdavSyncConfig = {
-    url: string;
-    username: string;
-    password: string;
-    directory: string;
-    lastSyncedAt: string;
-};
-export type ConfigTabKey = "channels" | "local-proxy" | "preferences" | "cloud-api" | "prompt-sources" | "webdav" | "local-storage" | "resources";
+export type ConfigTabKey = "preferences" | "cloud-api" | "local-storage";
 
 export type ChannelCredentialsImportResult = {
     status: "created" | "updated" | "missing-base-url" | "invalid-base-url";
@@ -200,17 +193,8 @@ export const defaultConfig: AiConfig = LOCAL_ONLY
       }
     : cloudDefaultConfig;
 
-export const defaultWebdavSyncConfig: WebdavSyncConfig = {
-    url: "",
-    username: "",
-    password: "",
-    directory: "infinite-canvas",
-    lastSyncedAt: "",
-};
-
 type ConfigStore = {
     config: AiConfig;
-    webdav: WebdavSyncConfig;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
@@ -220,7 +204,6 @@ type ConfigStore = {
     removePromptCloudApi: (id: string) => void;
     selectPromptCloudApi: (id: string) => void;
     importChannelCredentials: (input: { baseUrl?: string | null; apiKey?: string | null }) => ChannelCredentialsImportResult;
-    updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean, tab?: ConfigTabKey) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
@@ -411,9 +394,8 @@ export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({
             config: defaultConfig,
-            webdav: defaultWebdavSyncConfig,
             isConfigOpen: false,
-            configTab: "channels",
+            configTab: "preferences",
             shouldPromptContinue: false,
             updateConfig: (key, value) =>
                 set((state) => ({
@@ -472,25 +454,17 @@ export const useConfigStore = create<ConfigStore>()(
                 if (result.config !== currentConfig) set({ config: result.config });
                 return { status: result.status, channelName: result.channelName };
             },
-            updateWebdavConfig: (key, value) =>
-                set((state) => ({
-                    webdav: {
-                        ...state.webdav,
-                        [key]: value,
-                    },
-                })),
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),
-            openConfigDialog: (shouldPromptContinue = false, configTab = "channels") => set({ isConfigOpen: true, shouldPromptContinue, configTab }),
+            openConfigDialog: (shouldPromptContinue = false, configTab = "preferences") => set({ isConfigOpen: true, shouldPromptContinue, configTab }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
             clearPromptContinue: () => set({ shouldPromptContinue: false }),
         }),
         {
             name: CONFIG_STORE_KEY,
-            partialize: (state) => ({ config: state.config, webdav: state.webdav }),
+            partialize: (state) => ({ config: state.config }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
-                const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
                 const config = { ...defaultConfig, ...persistedConfig };
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
                 if (LOCAL_ONLY) {
@@ -533,7 +507,6 @@ export const useConfigStore = create<ConfigStore>()(
                 const normalizedCloud = normalizePromptCloudConfig(config);
                 return {
                     ...current,
-                    webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
                     config: {
                         ...config,
                         channelMode: "local",

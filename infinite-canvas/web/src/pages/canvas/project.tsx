@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Group, Video } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
@@ -10,7 +9,7 @@ import { createFreeWorkflowVideoTask, fetchFreeWorkflows, requestFreeWorkflowIma
 import { bindStepProgress, unbindStepProgress } from "@/services/api/step-progress";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, createVideoInterpolateTask, createVideoUpscaleTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
-import { channelModelOf, defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { channelModelOf, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { ensureImagePreview, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
@@ -91,7 +90,6 @@ import {
     type CanvasNodeData,
     type CanvasNodeImage,
     type CanvasNodeText,
-    type CanvasNodeMetadata,
     type CanvasNodeTypeId,
     type ConnectionHandle,
     type ContextMenuState,
@@ -99,9 +97,7 @@ import {
     type SelectionBox,
     type ViewportTransform,
 } from "@/types/canvas";
-import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
-import { LOCAL_ONLY } from "@/constant/app-mode";
 
 // Register built-in nodes in the shared registry once when the module loads.
 registerBuiltinNodes();
@@ -182,7 +178,6 @@ function InfiniteCanvasPage() {
     const nodeRegistryVersion = useNodeRegistryVersion((state) => state.version);
     const params = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
     const projectId = params.id || "";
     const containerRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -213,7 +208,6 @@ function InfiniteCanvasPage() {
         movedIds: new Set(),
     });
 
-    const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -3897,7 +3891,7 @@ function InfiniteCanvasPage() {
                     onCancelTitleEditing={() => setTitleEditing(false)}
                     canUndo={historyState.canUndo}
                     canRedo={historyState.canRedo}
-                    onHome={() => navigate("/")}
+                    onHome={() => navigate("/canvas")}
                     onProjects={() => navigate("/canvas")}
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}

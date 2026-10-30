@@ -1,25 +1,19 @@
 import { App, Button, Form, Input, Modal, Radio, Select, Switch, Tabs } from "antd";
-import { ArrowLeft, ArrowRight, ChevronDown, Download, Lock, Pencil, Plus, Trash2, Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, ChevronDown } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ModelPicker, WorkflowModelPicker } from "@/components/model-picker";
 import { imageAspectOptions } from "@/components/image-settings-panel";
-import { LOCAL_ONLY } from "@/constant/app-mode";
+import { LOCAL_GATEWAY_ORIGIN, LOCAL_ONLY } from "@/constant/app-mode";
 import { videoResolutionOptions } from "@/components/video-settings-panel";
-import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
-import { ConfigDirectories } from "@/components/layout/config-directories";
 import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
-import { ResourceCenterPanel } from "@/components/layout/resource-center-panel";
-import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, parseVideoResolution } from "@/lib/media-size";
 import { progressRingSkins } from "@/lib/canvas/progress-ring-skins";
 import { cardSkinIds, getCanvasTheme, type CardSkinId } from "@/lib/canvas-theme";
-import { isCardSkinLocked, verifySkinPassword } from "@/lib/canvas/skin-unlocks";
-import { persistSkinUnlock } from "@/services/api/skin-unlocks";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { useConfigStore, type ConfigTabKey, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -34,23 +28,15 @@ const modelGroups: ModelGroup[] = [
     { capability: "audio", modelKey: "audioModel", labelKey: "config.preferences.defaultAudioModel" },
 ];
 
-export function AppConfigPanel({ showDoneButton = false, initialTab = "channels" }: { showDoneButton?: boolean; initialTab?: ConfigTabKey }) {
-    const { message, modal } = App.useApp();
-    const { i18n, t } = useTranslation();
-    const configInputRef = useRef<HTMLInputElement>(null);
+export function AppConfigPanel({ showDoneButton = false, initialTab = "preferences" }: { showDoneButton?: boolean; initialTab?: ConfigTabKey }) {
+    const { message } = App.useApp();
+    const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState<ConfigTabKey>(initialTab);
-    const [editingChannelId, setEditingChannelId] = useState("");
-    const [passwordSkinId, setPasswordSkinId] = useState<CardSkinId | null>(null);
-    const [skinPassword, setSkinPassword] = useState("");
-    const [skinPasswordError, setSkinPasswordError] = useState("");
-    const [verifyingSkinPassword, setVerifyingSkinPassword] = useState(false);
     const [fishOptionsOpen, setFishOptionsOpen] = useState(false);
     const config = useConfigStore((state) => state.config);
     const appTheme = useThemeStore((state) => state.theme);
     const cardSkin = useThemeStore((state) => state.cardSkin) || "warm";
-    const unlockedCardSkins = useThemeStore((state) => state.unlockedCardSkins);
     const setCardSkin = useThemeStore((state) => state.setCardSkin);
-    const unlockCardSkin = useThemeStore((state) => state.unlockCardSkin);
     const fishWhipEnabled = useThemeStore((state) => state.fishWhipEnabled);
     const setFishWhipEnabled = useThemeStore((state) => state.setFishWhipEnabled);
     const fishWhipSide = useThemeStore((state) => state.fishWhipSide);
@@ -59,22 +45,10 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
-    const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
     const imageResolutionOptions = mediaScaleOptions.map((value) => ({ value, label: value === "auto" ? t("settingsPanels.common.auto") : value.toUpperCase() }));
     useEffect(() => setActiveTab(initialTab), [initialTab]);
 
-    const saveConfig = (nextConfig: AiConfig) => {
-        (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
-    };
-
     const selectCardSkin = (skinId: CardSkinId) => {
-        if (isCardSkinLocked(skinId) && !unlockedCardSkins.includes(skinId)) {
-            setFishOptionsOpen(true);
-            setPasswordSkinId(skinId);
-            setSkinPassword("");
-            setSkinPasswordError("");
-            return;
-        }
         if (skinId === "fish" || skinId === "angel") {
             setFishOptionsOpen(cardSkin === skinId ? !fishOptionsOpen : true);
         } else {
@@ -83,39 +57,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         setCardSkin(skinId);
     };
 
-    const closeSkinPasswordModal = () => {
-        if (verifyingSkinPassword) return;
-        setPasswordSkinId(null);
-        setSkinPassword("");
-        setSkinPasswordError("");
-    };
-
-    const unlockSelectedSkin = async () => {
-        if (!passwordSkinId || verifyingSkinPassword) return;
-        setVerifyingSkinPassword(true);
-        setSkinPasswordError("");
-        try {
-            const valid = await verifySkinPassword(passwordSkinId, skinPassword);
-            if (!valid) {
-                setSkinPasswordError(t("config.preferences.cardSkinPasswordWrong"));
-                return;
-            }
-            unlockCardSkin(passwordSkinId);
-            if (passwordSkinId === "fish") setFishOptionsOpen(true);
-            void persistSkinUnlock(passwordSkinId).catch(() => undefined);
-            message.success(t("config.preferences.cardSkinUnlocked", { name: t(`config.preferences.cardSkins.${passwordSkinId}.label`) }));
-            setPasswordSkinId(null);
-            setSkinPassword("");
-        } catch {
-            setSkinPasswordError(t("config.preferences.cardSkinPasswordUnavailable"));
-        } finally {
-            setVerifyingSkinPassword(false);
-        }
-    };
-
     useEffect(() => {
-        if ((cardSkin === "fish" && unlockedCardSkins.includes("fish")) || cardSkin === "angel") setFishOptionsOpen(true);
-    }, [cardSkin, unlockedCardSkins]);
+        if (cardSkin === "fish" || cardSkin === "angel") setFishOptionsOpen(true);
+    }, [cardSkin]);
 
     const finishConfig = () => {
         const ready = config.channels.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
@@ -125,93 +69,19 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         clearPromptContinue();
     };
 
-    const loadConfigFile = async (file: File) => {
-        try {
-            await importAppConfig(file);
-            message.success(t("config.imported"));
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : t("config.importFailed"));
-        } finally {
-            if (configInputRef.current) configInputRef.current.value = "";
-        }
-    };
-
-    const updateChannels = (channels: ModelChannel[]) => saveConfig(withChannels(config, channels));
-
-    const addChannel = () => {
-        const channel = createModelChannel({ name: t("config.channels.numberedName", { count: config.channels.length + 1 }) });
-        updateChannels([...config.channels, channel]);
-        setEditingChannelId(channel.id);
-    };
-
-    const deleteChannel = (id: string) => {
-        if (config.channels.length <= 1) {
-            message.warning(t("config.channels.keepOne"));
-            return;
-        }
-        updateChannels(config.channels.filter((channel) => channel.id !== id));
-    };
-
-    const saveChannel = (channel: ModelChannel) => {
-        updateChannels(config.channels.map((item) => (item.id === channel.id ? channel : item)));
-    };
-
     return (
         <>
-            {!LOCAL_ONLY ? (
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3 dark:border-stone-800">
-                    <div className="text-xs text-stone-500">{t("config.fileSecurity")}</div>
-                    <div className="flex gap-2">
-                        <Button icon={<Upload className="size-4" />} onClick={() => configInputRef.current?.click()}>
-                            {t("config.import")}
-                        </Button>
-                        <Button icon={<Download className="size-4" />} onClick={exportAppConfig}>
-                            {t("config.export")}
-                        </Button>
-                        <input ref={configInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => event.target.files?.[0] && void loadConfigFile(event.target.files[0])} />
-                    </div>
-                </div>
-            ) : (
-                <div className="border-b border-stone-200 pb-3 text-xs text-stone-500 dark:border-stone-800">配置只保存在本机浏览器。</div>
-            )}
+            <div className="border-b border-stone-200 pb-3 text-xs text-stone-500 dark:border-stone-800">配置只保存在本机浏览器。</div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 px-4 py-3 dark:border-stone-800">
+                <div className="text-xs text-stone-500">工作流与模型目录由本地网关管理；请到网关管理页配置 ComfyUI 和工作流目录。</div>
+                <Button size="small" href={`${LOCAL_GATEWAY_ORIGIN}/admin`} target="_blank" rel="noopener noreferrer">
+                    打开网关管理页
+                </Button>
+            </div>
             <Tabs
                 activeKey={activeTab}
                 onChange={(key) => setActiveTab(key as ConfigTabKey)}
                 items={[
-                    {
-                        key: "channels",
-                        label: t("config.tabs.channels"),
-                        children: (
-                            <div>
-                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                                    <div className="text-xs text-stone-500">{LOCAL_ONLY ? "只使用本地 ComfyUI 网关。模型由网关工作流注册表提供。" : t("config.channels.description")}</div>
-                                    {!LOCAL_ONLY ? (
-                                        <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
-                                            {t("config.channels.add")}
-                                        </Button>
-                                    ) : null}
-                                </div>
-                                <div className="space-y-2">
-                                    {config.channels.map((channel) => (
-                                        <div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-4 py-3 dark:border-stone-800">
-                                            <div className="min-w-0">
-                                                <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
-                                                <div className="mt-1 truncate text-xs text-stone-500">
-                                                    {LOCAL_ONLY ? "本地网关" : apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
-                                                </div>
-                                            </div>
-                                            <div className="flex shrink-0 gap-2">
-                                                <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
-                                                    {t("common.edit")}
-                                                </Button>
-                                                {!LOCAL_ONLY ? <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} /> : null}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ),
-                    },
                     {
                         key: "preferences",
                         label: t("config.tabs.preferences"),
@@ -277,14 +147,12 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                 <Form.Item label={t("config.preferences.cardSkin")} extra={t("config.preferences.cardSkinDescription")} className="mb-4">
                                     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                                         {cardSkinIds.map((id) => {
-                                            const locked = isCardSkinLocked(id) && !unlockedCardSkins.includes(id);
-                                            const selected = cardSkin === id && !locked;
+                                            const selected = cardSkin === id;
                                             const palette = getCanvasTheme(appTheme, id).node;
                                             return (
                                                 <button
                                                     key={id}
                                                     type="button"
-                                                    title={locked ? t("config.preferences.cardSkinLockedHint") : undefined}
                                                     onClick={() => selectCardSkin(id)}
                                                     className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition ${selected ? "border-stone-900 bg-stone-100 dark:border-stone-100 dark:bg-white/10" : "border-stone-200 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-white/5"}`}
                                                 >
@@ -299,27 +167,21 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                                 <span className="block h-1 w-5 rounded-full" style={{ background: palette.muted, opacity: 0.65 }} />
                                                             </span>
                                                         )}
-                                                        {locked ? (
-                                                            <span className="absolute inset-0 grid place-items-center bg-stone-950/45 text-white">
-                                                                <Lock className="size-4" />
-                                                            </span>
-                                                        ) : null}
                                                     </span>
                                                     <span className="min-w-0">
                                                         <span className="flex items-center gap-1.5 text-sm font-medium">
                                                             <span className="truncate">{t(`config.preferences.cardSkins.${id}.label`)}</span>
-                                                            {locked ? <span className="shrink-0 rounded-full border border-current px-1.5 py-0.5 text-[9px] font-medium opacity-70">{t("config.preferences.cardSkinLocked")}</span> : null}
-                                                            {(id === "fish" || id === "angel") && !locked ? (
+                                                            {id === "fish" || id === "angel" ? (
                                                                 <ChevronDown className={`ml-auto size-3.5 shrink-0 opacity-45 transition-transform ${selected && fishOptionsOpen ? "rotate-180" : ""}`} />
                                                             ) : null}
                                                         </span>
-                                                        <span className="mt-0.5 block truncate text-[11px] opacity-60">{locked ? t("config.preferences.cardSkinLockedHint") : t(`config.preferences.cardSkins.${id}.description`)}</span>
+                                                        <span className="mt-0.5 block truncate text-[11px] opacity-60">{t(`config.preferences.cardSkins.${id}.description`)}</span>
                                                     </span>
                                                 </button>
                                             );
                                         })}
                                     </div>
-                                    {((cardSkin === "fish" && unlockedCardSkins.includes("fish")) || cardSkin === "angel") && fishOptionsOpen ? (
+                                    {(cardSkin === "fish" || cardSkin === "angel") && fishOptionsOpen ? (
                                         <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50/80 px-3 py-3 dark:border-stone-800 dark:bg-white/5">
                                             <div className="flex items-start justify-between gap-4">
                                                 <div className="min-w-0">
@@ -405,16 +267,6 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                         ),
                     },
                     {
-                        key: "resources",
-                        label: t("config.tabs.resources"),
-                        children: (
-                            <>
-                                <ConfigDirectories />
-                                <ResourceCenterPanel />
-                            </>
-                        ),
-                    },
-                    {
                         key: "local-storage",
                         label: t("config.tabs.localStorage"),
                         children: <ConfigLocalStorage active={activeTab === "local-storage"} />,
@@ -428,37 +280,6 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                     </Button>
                 </div>
             ) : null}
-            <ChannelEditorDrawer open={Boolean(editingChannel)} channel={editingChannel} onSave={saveChannel} onClose={() => setEditingChannelId("")} />
-            <Modal
-                open={Boolean(passwordSkinId)}
-                centered
-                width={420}
-                maskClosable={false}
-                title={passwordSkinId ? t("config.preferences.cardSkinUnlockTitle", { name: t(`config.preferences.cardSkins.${passwordSkinId}.label`) }) : ""}
-                okText={t("config.preferences.cardSkinUnlockAction")}
-                cancelText={t("common.cancel")}
-                confirmLoading={verifyingSkinPassword}
-                okButtonProps={{ disabled: !skinPassword.trim() || verifyingSkinPassword }}
-                cancelButtonProps={{ disabled: verifyingSkinPassword }}
-                onOk={() => void unlockSelectedSkin()}
-                onCancel={closeSkinPasswordModal}
-            >
-                <p className="mb-3 text-sm text-stone-500">{t("config.preferences.cardSkinUnlockHint")}</p>
-                <Input.Password
-                    autoFocus
-                    value={skinPassword}
-                    status={skinPasswordError ? "error" : undefined}
-                    placeholder={t("config.preferences.cardSkinPasswordPlaceholder")}
-                    onChange={(event) => {
-                        setSkinPassword(event.target.value);
-                        if (skinPasswordError) setSkinPasswordError("");
-                    }}
-                    onPressEnter={() => {
-                        if (skinPassword.trim() && !verifyingSkinPassword) void unlockSelectedSkin();
-                    }}
-                />
-                {skinPasswordError ? <p className="mt-2 text-xs text-red-500">{skinPasswordError}</p> : null}
-            </Modal>
         </>
     );
 }
@@ -488,36 +309,7 @@ export function AppConfigModal() {
     );
 }
 
-function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
-    const next: AiConfig = {
-        ...config,
-        channels,
-        models: modelOptionsFromChannels(channels),
-        baseUrl: channels[0]?.baseUrl || config.baseUrl,
-        apiKey: channels[0]?.apiKey || config.apiKey,
-        apiFormat: channels[0]?.apiFormat || config.apiFormat,
-    };
-    return {
-        ...next,
-        imageModel: pickDefaultModel(next, "image", config.imageModel),
-        videoModel: pickDefaultModel(next, "video", config.videoModel),
-        textModel: pickDefaultModel(next, "text", config.textModel),
-        audioModel: pickDefaultModel(next, "audio", config.audioModel),
-    };
-}
-
-function pickDefaultModel(config: AiConfig, capability: ModelCapability, current: string) {
-    const options = selectableModelsByCapability(config, capability);
-    const normalized = normalizeModelOptionValue(current, config.channels);
-    return options.includes(normalized) ? normalized : options[0] || "";
-}
-
 function normalizeImageCount(value: string) {
     return String(Math.max(1, Math.min(15, Math.floor(Math.abs(Number(value)) || 3))));
-}
-
-function apiFormatLabel(apiFormat: ApiCallFormat) {
-    if (apiFormat === "gemini") return "Gemini";
-    return "OpenAI";
 }
 

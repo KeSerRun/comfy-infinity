@@ -165,7 +165,7 @@ export async function freeWorkflowComfyUrl(config: AiConfig, id: string): Promis
     };
 }
 
-async function buildFormData(config: AiConfig, request: FreeWorkflowRequest) {
+async function buildFormData(request: FreeWorkflowRequest) {
     const formData = new FormData();
     formData.set("prompt", request.prompt);
     if (request.texts?.length) formData.set("texts", JSON.stringify(request.texts));
@@ -183,7 +183,7 @@ async function buildFormData(config: AiConfig, request: FreeWorkflowRequest) {
 
 export async function requestFreeWorkflowImage(config: AiConfig, id: string, request: FreeWorkflowRequest) {
     const root = gatewayRoot(config);
-    const formData = await buildFormData(config, request);
+    const formData = await buildFormData(request);
     const requestId = `free_${nanoid()}`;
     const detachCancel = attachLocalCancel(config, requestId, request.signal);
     const detachProgress = attachLocalProgress(config, requestId, request.signal);
@@ -210,7 +210,7 @@ export async function requestFreeWorkflowImage(config: AiConfig, id: string, req
 
 export async function createFreeWorkflowVideoTask(config: AiConfig, id: string, request: FreeWorkflowRequest) {
     const root = gatewayRoot(config);
-    const formData = await buildFormData(config, request);
+    const formData = await buildFormData(request);
     try {
         const response = await axios.post<{ id?: string }>(`${root}/v1/free-workflows/${encodeURIComponent(id)}/videos`, formData, {
             signal: request.signal,

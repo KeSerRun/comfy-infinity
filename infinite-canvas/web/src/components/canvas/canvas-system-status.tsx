@@ -11,8 +11,8 @@ type GpuStats = {
     name: string;
     memoryUsedMb: number;
     memoryTotalMb: number;
-    utilization: number;
-    temperature: number;
+    utilization?: number;
+    temperature?: number;
 };
 
 type SystemStats = {
@@ -174,7 +174,7 @@ export function CanvasSystemStatus() {
             >
                 <Gauge className="size-3.5" />
                 {stats && !stats.comfy.reachable ? <span style={{ color: "#dc2626" }}>ComfyUI 离线 · 点击修复</span> : null}
-                <span>{gpu ? `显存 ${vramGb(gpu.memoryUsedMb)}/${vramGb(gpu.memoryTotalMb)}G` : "显存 --"}</span>
+                <span>{gpu ? (gpu.memoryTotalMb > 0 ? `显存 ${vramGb(gpu.memoryUsedMb)}/${vramGb(gpu.memoryTotalMb)}G` : `显存 ${vramGb(gpu.memoryUsedMb)}G`) : "显存 --"}</span>
                 <span className="hidden opacity-40 lg:inline">·</span>
                 <span className="hidden lg:inline">内存 {stats ? `${gb(stats.ram.usedBytes)}/${gb(stats.ram.totalBytes)}G` : "--"}</span>
                 {oom ? <span className="size-1.5 rounded-full" style={{ background: "#dc2626" }} title="最近发生过 OOM" /> : null}
@@ -184,7 +184,7 @@ export function CanvasSystemStatus() {
                     <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs" style={{ color: theme.node.muted }}>
                             <span>显存</span>
-                            <span>{gpu ? `${vramGb(gpu.memoryUsedMb)} / ${vramGb(gpu.memoryTotalMb)} GB` : "--"}</span>
+                            <span>{gpu ? (gpu.memoryTotalMb > 0 ? `${vramGb(gpu.memoryUsedMb)} / ${vramGb(gpu.memoryTotalMb)} GB` : `已用 ${vramGb(gpu.memoryUsedMb)} GB`) : "--"}</span>
                         </div>
                         <div className="h-1.5 overflow-hidden rounded-full" style={{ background: theme.node.fill }}>
                             <div className="h-full rounded-full transition-[width]" style={barStyle(vramPercent)} />
@@ -193,7 +193,8 @@ export function CanvasSystemStatus() {
                             <div className="flex items-center justify-between text-[11px]" style={{ color: theme.node.faint }}>
                                 <span className="truncate">{gpu.name}{stats.gpuStale ? "（读取超时，显示上次读数）" : ""}</span>
                                 <span>
-                                    利用率 {gpu.utilization}% · {gpu.temperature}°C
+                                    {typeof gpu.utilization === "number" ? `利用率 ${Math.round(gpu.utilization)}%` : "利用率 --"}
+                                    {typeof gpu.temperature === "number" && gpu.temperature > 0 ? ` · ${Math.round(gpu.temperature)}°C` : ""}
                                 </span>
                             </div>
                         ) : (

@@ -4,6 +4,7 @@ import { Button, message, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { BaseModelPicker, ModelPicker, WorkflowModelPicker } from "@/components/model-picker";
+import { GATEWAY_ADMIN_URL } from "@/constant/app-mode";
 import { channelModelOf, defaultConfig, modelImageInputs, modelOptionName, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
@@ -585,7 +586,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     <span className="min-w-0 truncate" title={captionLocalCapability.reasons.join("；")}>
                         {t("canvas.promptPanel.captionLocalMissing")}
                     </span>
-                    <button type="button" className="shrink-0 underline underline-offset-2" onClick={() => openConfigDialog(false, "resources")}>
+                    <button type="button" className="shrink-0 underline underline-offset-2" onClick={() => window.open(GATEWAY_ADMIN_URL, "_blank", "noopener")}>
                         {t("canvas.promptPanel.captionInstall")}
                     </button>
                 </div>
@@ -610,7 +611,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     onEngineChange={(engine) => updateConfig("promptApiEngine", engine)}
                     onLanguageChange={(language) => updateConfig("promptOptimizeLanguage", language)}
                     onOpenSettings={() => openConfigDialog(true, "cloud-api")}
-                    onOpenLocalSettings={() => openConfigDialog(false, "resources")}
+                    onOpenLocalSettings={() => window.open(GATEWAY_ADMIN_URL, "_blank", "noopener")}
                     onStart={() => (isH3 ? void optimizePrompt() : void optimizeImagePrompt())}
                     onClose={() => setOptimizeOptionsOpen(false)}
                 />

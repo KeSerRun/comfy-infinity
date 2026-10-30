@@ -12,7 +12,7 @@ export default function NotFound() {
                     <h1 className="text-3xl font-semibold tracking-normal">{t("notFound.title")}</h1>
                     <p className="mt-3 text-sm leading-6 text-stone-500 dark:text-stone-400">{t("notFound.description")}</p>
                     <div className="mt-8 flex flex-wrap justify-center gap-3">
-                        <Link to="/" className="inline-flex h-10 items-center gap-2 rounded-lg bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-stone-200">
+                        <Link to="/canvas" className="inline-flex h-10 items-center gap-2 rounded-lg bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-stone-200">
                             <Home className="size-4" />
                             {t("notFound.home")}
                         </Link>

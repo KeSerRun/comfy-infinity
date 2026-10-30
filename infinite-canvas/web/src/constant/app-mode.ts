@@ -19,6 +19,7 @@ export const LOCAL_GATEWAY_ORIGIN = (() => {
     }
 })();
 export const LOCAL_GATEWAY_CHANNEL_ID = "local-gateway";
+export const GATEWAY_ADMIN_URL = `${LOCAL_GATEWAY_ORIGIN}/admin`;
 
 export const LOCAL_GATEWAY_MODELS = [
     { name: "image-z-image-turbo", capability: "image" as const, imageInputs: 0 },

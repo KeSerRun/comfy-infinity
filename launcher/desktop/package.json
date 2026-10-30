@@ -1,0 +1,28 @@
+{
+  "name": "comfy-infinity-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Comfy Infinity 桌面外壳（托盘 + 控制台窗口 + 画布窗口）",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.comfyinfinity.desktop",
+    "productName": "Comfy Infinity",
+    "asar": false,
+    "files": ["main.cjs", "lib.cjs", "loading.html", "package.json"],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": ["dir"],
+      "icon": "../../launcher/app-icon.ico"
+    }
+  }
+}
