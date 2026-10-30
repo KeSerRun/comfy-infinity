@@ -1,7 +1,7 @@
 export default {
     meta: {
-        title: "Boundless Workbench",
-        description: "A local AI creation workbench",
+        title: "Comfy Infinity",
+        description: "Local AI creation workbench",
     },
     theme: { toggle: "Toggle theme" },
     gateway: {

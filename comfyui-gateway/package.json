@@ -1,9 +1,9 @@
 {
-  "name": "comfyui-gateway",
+  "name": "comfy-infinity-gateway",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Local OpenAI-compatible gateway that exposes ComfyUI workflows as models for Infinite Canvas.",
+  "description": "Local OpenAI-compatible gateway that exposes ComfyUI workflows as models for Comfy Infinity.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

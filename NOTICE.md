@@ -26,10 +26,13 @@
 
 ## 本项目
 
-- 项目名：ComfyUI-本地无限画布
-- 作者：1314521gjy（GitHub）
+- 项目名：Comfy Infinity（本地无限画布）
+- 性质：个人单机版，基于 1314521gjy 的 ComfyUI-本地无限画布修改
+- 作者：KeSerRun
 - 许可证：MIT License，见根目录 `LICENSE`
-- 仓库：https://github.com/1314521gjy/ComfyUI-Local-Infinite-Canvas
+- 原始项目：https://github.com/1314521gjy/ComfyUI-Local-Infinite-Canvas
+
+本分支移除了云端渠道、Agent、WebDAV、提示词库、插件市场、捐赠入口和上游应用内更新，固定为本地单机使用。上游 `comfyui-gateway`、`launcher` 与 Infinite Canvas 修改的版权声明继续保留。
 
 ## 第三方与模型
 
