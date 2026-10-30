@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>无界工作台 · 启动器</title>
+<style>
+  :root {
+    --bg: #0f0e0d;
+    --panel: #171513;
+    --panel-2: #1d1a17;
+    --panel-3: #23201c;
+    --border: #2c2722;
+    --border-strong: #3a342d;
+    --text: #f4f1ec;
+    --muted: #a8a198;
+    --faint: #726b62;
+    --accent: #f0a43a;
+    --accent-ink: #1b1307;
+    --accent-soft: rgba(240, 164, 58, .12);
+    --online: #57d68d;
+    --warn: #f5c451;
+    --offline: #f0736f;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --mono: "Cascadia Code", "Cascadia Mono", Consolas, "SFMono-Regular", monospace;
+    --sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow-x: clip;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  button { font: inherit; }
+  :focus-visible { outline: 2px dashed var(--accent); outline-offset: 3px; }
+  ::selection { background: var(--accent-soft); }
+
+  .skip {
+    position: absolute; left: 12px; top: -60px; z-index: 40;
+    background: var(--accent); color: var(--accent-ink);
+    padding: 10px 16px; border-radius: 8px; font-weight: 600; text-decoration: none;
+  }
+  .skip:focus { top: 12px; }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    min-height: 100vh;
+  }
+  .shell > * { min-width: 0; }
+  .split > * { min-width: 0; }
+  .logs, .log-view, .service, .svc-addr { min-width: 0; }
+
+  /* ---------------------------------------------------------------- rail */
+  .rail {
+    position: sticky; top: 0; align-self: start;
+    height: 100vh; overflow-y: auto;
+    padding: 22px 20px 18px;
+    background: linear-gradient(180deg, #141210 0%, #12100e 100%);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 22px;
+  }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .brand svg { width: 30px; height: 30px; color: var(--accent); flex: none; }
+  .brand strong { display: block; font-size: 15px; font-weight: 650; letter-spacing: .01em; }
+  .brand span { display: block; margin-top: 1px; font-size: 11px; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
+
+  .overall {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 13px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .overall .dot { width: 9px; height: 9px; }
+  .overall strong { font-size: 13px; font-weight: 600; }
+  .overall span { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+  .dot.online { background: var(--online); box-shadow: 0 0 0 4px rgba(87, 214, 141, .10); }
+  .dot.warn { background: var(--warn); box-shadow: 0 0 0 4px rgba(245, 196, 81, .10); }
+  .dot.offline { background: var(--offline); box-shadow: 0 0 0 4px rgba(240, 115, 111, .10); }
+  .dot.pulse { animation: pulse 2.2s ease-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { .dot.pulse { animation: none; } }
+
+  .rail-actions { display: grid; gap: 8px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 38px; padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 13px; font-weight: 550;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background .16s ease-out, border-color .16s ease-out, transform .16s ease-out, color .16s ease-out;
+  }
+  .btn:hover { background: var(--panel-3); border-color: #4a433a; }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 650; }
+  .btn.primary:hover { background: #f6b65c; border-color: #f6b65c; }
+  .btn.big { min-height: 46px; font-size: 14px; }
+  .btn.ghost { background: transparent; }
+  .btn.ghost:hover { background: var(--panel-2); }
+  .btn.small { min-height: 30px; padding: 0 11px; font-size: 12px; }
+  .btn.danger { border-color: rgba(240, 115, 111, .38); color: #ffb4b1; }
+  .btn.danger:hover { background: rgba(240, 115, 111, .10); border-color: rgba(240, 115, 111, .62); }
+  .btn.danger-solid { background: var(--offline); border-color: var(--offline); color: #1b0808; font-weight: 650; }
+  .btn.danger-solid:hover { background: #f78d89; border-color: #f78d89; }
+
+  .rail-block { display: grid; gap: 9px; }
+  .rail-block h2 {
+    margin: 0; font-size: 10.5px; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  .rail-block .btn { width: 100%; justify-content: flex-start; }
+  .rail-block .btn svg { width: 15px; height: 15px; flex: none; }
+
+  .config { margin-top: auto; }
+  .config summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+    min-height: 24px;
+  }
+  .config summary::-webkit-details-marker { display: none; }
+  .config-title {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  .config-chevron {
+    width: 7px; height: 7px; border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint);
+    transform: rotate(45deg); transition: transform .16s ease-out; margin-right: 2px;
+  }
+  .config[open] .config-chevron { transform: rotate(225deg); }
+  .config dl { margin: 9px 0 0; display: grid; gap: 7px; }
+  .config dt { font-size: 10.5px; color: var(--faint); }
+  .config dd {
+    margin: 1px 0 0; font-family: var(--mono); font-size: 11px; color: var(--muted);
+    overflow-wrap: anywhere; line-height: 1.45;
+  }
+  .rail-footer { padding-top: 4px; font-size: 10.5px; color: var(--faint); }
+
+  /* ---------------------------------------------------------------- main */
+  main { min-width: 0; padding: 26px 30px 34px; display: flex; flex-direction: column; gap: 18px; }
+  .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  .eyebrow { margin: 0 0 5px; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  h1 { margin: 0; font-size: 24px; line-height: 1.25; font-weight: 650; letter-spacing: -.01em; }
+  .sub { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+  .meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 4px; }
+  .meta .stamp { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .check { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+  .check input { accent-color: var(--accent); width: 15px; height: 15px; }
+
+  .banner {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 11px 14px; border-radius: var(--radius-sm);
+    border: 1px solid rgba(240, 115, 111, .35);
+    background: rgba(240, 115, 111, .08);
+    color: #ffc9c7; font-size: 12.5px; line-height: 1.55;
+  }
+  .banner[hidden] { display: none; }
+  .banner code { font-family: var(--mono); font-size: 11.5px; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 13px 17px; border-bottom: 1px solid var(--border);
+  }
+  .panel-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+  .panel-head .hint { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .panel-head .tools { display: flex; align-items: center; gap: 12px; }
+
+  /* services */
+  .service-list { display: grid; }
+  .service {
+    display: grid;
+    grid-template-columns: 16px minmax(150px, 1.1fr) minmax(180px, 1.4fr) minmax(120px, .9fr) auto;
+    align-items: center; gap: 14px;
+    padding: 15px 17px;
+    border-bottom: 1px solid var(--border);
+  }
+  .service:last-child { border-bottom: 0; }
+  .service:hover { background: rgba(255, 255, 255, .014); }
+  .svc-name strong { display: block; font-size: 13px; font-weight: 600; }
+  .svc-name span { display: block; margin-top: 2px; font-size: 11px; color: var(--faint); }
+  .svc-addr { min-width: 0; }
+  .svc-addr a {
+    display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    text-decoration: none; border-bottom: 1px solid transparent;
+  }
+  .svc-addr a:hover { color: var(--text); border-bottom-color: var(--border-strong); }
+  .svc-meta { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .svc-meta .state { color: var(--muted); }
+  .svc-actions { display: flex; align-items: center; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+
+  /* metrics + logs */
+  .split { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 18px; min-height: 0; }
+  .metrics { display: grid; gap: 16px; padding: 16px 17px 18px; }
+  .metric-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .metric-head span { font-size: 11.5px; color: var(--muted); }
+  .metric-head b { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; border-radius: 999px; background: #26221e; overflow: hidden; margin-top: 7px; }
+  .bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .35s ease-out; }
+  .bar.warn i { background: var(--warn); }
+  .bar.hot i { background: var(--offline); }
+  .metric-note { margin-top: 6px; font-size: 10.5px; color: var(--faint); }
+  .empty-note { padding: 26px 6px; text-align: center; font-size: 12px; color: var(--faint); }
+
+  .logs { display: flex; flex-direction: column; min-height: 320px; }
+  .log-view {
+    flex: 1; margin: 0; padding: 13px 16px;
+    min-height: 260px; max-height: 46vh; overflow: auto;
+    background: #0c0b0a;
+    color: #c9c2b8;
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.62;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+    tab-size: 2;
+  }
+  .log-view .lvl-ERROR { color: #ff9b97; }
+  .log-view .lvl-WARN { color: #f5c451; }
+  .log-empty { padding: 34px 16px; text-align: center; color: var(--faint); font-size: 12px; }
+
+  /* skeleton */
+  .skeleton { position: relative; overflow: hidden; background: #1b1815; border-radius: 6px; height: 11px; }
+  .skeleton::after {
+    content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.045), transparent);
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer { 100% { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) { .skeleton::after { animation: none; } }
+
+  /* dialog */
+  dialog {
+    width: min(420px, calc(100vw - 32px));
+    padding: 0; border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: var(--panel); color: var(--text);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, .58); }
+  .dialog-body { padding: 20px 20px 16px; }
+  .dialog-body h2 { margin: 0; font-size: 16px; font-weight: 650; }
+  .dialog-body p { margin: 9px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 18px; }
+
+  /* toast */
+  .toast {
+    position: fixed; right: 20px; bottom: 20px; z-index: 50;
+    max-width: min(360px, calc(100vw - 40px));
+    padding: 11px 14px; border-radius: var(--radius-sm);
+    background: var(--panel-3); border: 1px solid var(--border-strong);
+    color: var(--text); font-size: 12.5px; line-height: 1.5;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .45);
+    opacity: 0; transform: translateY(8px); pointer-events: none;
+    transition: opacity .18s ease-out, transform .18s ease-out;
+  }
+  .toast.show { opacity: 1; transform: none; }
+  .toast.error { border-color: rgba(240, 115, 111, .5); }
+  .toast.ok { border-color: rgba(87, 214, 141, .35); }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  /* ------------------------------------------------------------ responsive */
+  @media (max-width: 1120px) {
+    .service { grid-template-columns: 16px minmax(130px, 1fr) minmax(160px, 1.2fr) auto; }
+    .service .svc-meta { display: none; }
+    .split { grid-template-columns: 1fr; }
+    .log-view { max-height: 38vh; }
+  }
+  @media (max-width: 880px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail { position: static; height: auto; padding: 18px 16px; gap: 16px; border-right: 0; border-bottom: 1px solid var(--border); }
+    .rail .config { margin-top: 0; }
+    .rail-actions { grid-template-columns: 1fr 1fr; }
+    .rail-block:not(.config) { grid-template-columns: 1fr 1fr; }
+    .rail-block:not(.config) h2 { grid-column: 1 / -1; }
+    .rail-block:not(.config) .btn { width: auto; justify-content: center; }
+    .rail-block:not(.config) .btn:last-child { grid-column: 1 / -1; }
+    .config dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rail-footer { display: none; }
+    main { padding: 22px 18px 30px; }
+  }
+  @media (max-width: 640px) {
+    .service { grid-template-columns: 16px minmax(0, 1fr); row-gap: 10px; }
+    .service .svc-addr { grid-column: 2; }
+    .svc-actions { grid-column: 2; justify-content: flex-start; }
+    .svc-actions .btn { flex: 1; min-height: 38px; }
+    .top { flex-direction: column; gap: 12px; }
+    .meta { width: 100%; justify-content: space-between; }
+    .config dl { grid-template-columns: 1fr; }
+    .log-view { min-height: 220px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到主内容</a>
+
+<div class="shell">
+  <aside class="rail" aria-label="启动器侧栏">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <path d="M8 16c0-3.3 2.7-6 6-6s6 2.7 6 6-2.7 6-6 6-6-2.7-6-6Z" stroke="currentColor" stroke-width="2"/>
+        <path d="M12 16c0-3.3 2.7-6 6-6s6 2.7 6 6-2.7 6-6 6" stroke="currentColor" stroke-width="2" opacity=".55"/>
+      </svg>
+      <div>
+        <strong>无界工作台</strong>
+        <span>Launcher</span>
+      </div>
+    </div>
+
+    <div class="overall" id="overall" aria-live="polite">
+      <span class="dot" id="overallDot"></span>
+      <div>
+        <strong id="overallTitle">正在读取状态</strong>
+        <span id="overallText">连接启动器控制接口…</span>
+      </div>
+    </div>
+
+    <div class="rail-actions">
+      <a class="btn primary big" id="openCanvas" href="#" aria-disabled="true">打开画布</a>
+      <a class="btn ghost" id="openAdmin" href="#" aria-disabled="true">网关管理</a>
+    </div>
+
+    <section class="rail-block" aria-labelledby="quickTitle">
+      <h2 id="quickTitle">快捷操作</h2>
+      <button class="btn ghost" type="button" data-action="restart-gateway">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+        重启网关
+      </button>
+      <button class="btn ghost" type="button" data-action="restart-comfy">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+        重启 ComfyUI
+      </button>
+      <button class="btn danger" type="button" data-action="shutdown">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
+        关闭工作台
+      </button>
+    </section>
+
+    <details class="rail-block config" id="configDetails" open>
+      <summary><span class="config-title">运行配置</span><span class="config-chevron" aria-hidden="true"></span></summary>
+      <dl id="configList">
+        <div><dt>ComfyUI 目录</dt><dd>读取中…</dd></div>
+        <div><dt>工作流目录</dt><dd>读取中…</dd></div>
+        <div><dt>端口</dt><dd>读取中…</dd></div>
+        <div><dt>局域网</dt><dd>读取中…</dd></div>
+      </dl>
+    </details>
+
+    <div class="rail-footer" id="railFooter">本地启动器 · 仅绑定 127.0.0.1</div>
+  </aside>
+
+  <main id="main">
+    <header class="top">
+      <div>
+        <p class="eyebrow">Console</p>
+        <h1>服务状态与操作</h1>
+        <p class="sub">启动器、网关和 ComfyUI 的实时状态。所有操作只影响本机。</p>
+      </div>
+      <div class="meta">
+        <span class="stamp" id="updated">尚未刷新</span>
+        <label class="check"><input type="checkbox" id="autoRefresh" checked /> 自动刷新</label>
+        <button class="btn small" type="button" id="refresh">刷新</button>
+      </div>
+    </header>
+
+    <div class="banner" id="errorBanner" role="alert" hidden></div>
+
+    <section class="panel" aria-labelledby="servicesTitle">
+      <div class="panel-head">
+        <h2 id="servicesTitle">服务</h2>
+        <span class="hint" id="servicesHint">本机 · 127.0.0.1</span>
+      </div>
+      <div class="service-list" id="serviceList" aria-live="polite">
+        <div class="service"><span class="skeleton" style="width:9px;height:9px;border-radius:50%"></span><div class="skeleton" style="width:120px"></div><div class="skeleton" style="width:170px"></div><div class="skeleton" style="width:90px"></div><div class="skeleton" style="width:150px"></div></div>
+        <div class="service"><span class="skeleton" style="width:9px;height:9px;border-radius:50%"></span><div class="skeleton" style="width:100px"></div><div class="skeleton" style="width:150px"></div><div class="skeleton" style="width:70px"></div><div class="skeleton" style="width:150px"></div></div>
+        <div class="service"><span class="skeleton" style="width:9px;height:9px;border-radius:50%"></span><div class="skeleton" style="width:90px"></div><div class="skeleton" style="width:140px"></div><div class="skeleton" style="width:60px"></div><div class="skeleton" style="width:90px"></div></div>
+      </div>
+    </section>
+
+    <div class="split">
+      <section class="panel" aria-labelledby="metricsTitle">
+        <div class="panel-head">
+          <h2 id="metricsTitle">硬件</h2>
+          <span class="hint" id="metricsAt"></span>
+        </div>
+        <div class="metrics" id="metrics">
+          <div class="empty-note">正在读取显卡与内存…</div>
+        </div>
+      </section>
+
+      <section class="panel logs" aria-labelledby="logsTitle">
+        <div class="panel-head">
+          <h2 id="logsTitle">启动器日志</h2>
+          <div class="tools">
+            <label class="check"><input type="checkbox" id="autoScroll" checked /> 跟随</label>
+            <button class="btn small" type="button" id="refreshLogs">刷新</button>
+          </div>
+        </div>
+        <pre class="log-view" id="logView" tabindex="0" aria-label="启动器日志">正在读取日志…</pre>
+      </section>
+    </div>
+  </main>
+</div>
+
+<dialog id="confirmDialog" aria-labelledby="confirmTitle">
+  <div class="dialog-body">
+    <h2 id="confirmTitle">确认操作</h2>
+    <p id="confirmText"></p>
+  </div>
+  <div class="dialog-actions">
+    <button class="btn ghost" type="button" id="confirmCancel">取消</button>
+    <button class="btn danger-solid" type="button" id="confirmOk">确认</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const state = {
+    status: null,
+    busy: false,
+    pollTimer: null,
+    logTimer: null,
+    toastTimer: null,
+    confirmResolve: null,
+    lastLog: "",
+  };
+
+  const ACTION_LABELS = {
+    "start-gateway": "启动网关",
+    "stop-gateway": "停止网关",
+    "restart-gateway": "重启网关",
+    "start-comfy": "启动 ComfyUI",
+    "stop-comfy": "停止 ComfyUI",
+    "restart-comfy": "重启 ComfyUI",
+    "shutdown": "关闭工作台",
+  };
+  const SLOW_ACTIONS = new Set(["restart-comfy", "start-comfy"]);
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  }
+  function fmtUptime(sec) {
+    const s = Math.max(0, Number(sec) || 0);
+    if (s < 60) return `${s} 秒`;
+    if (s < 3600) return `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+    return `${Math.floor(s / 3600)} 小时 ${Math.floor((s % 3600) / 60)} 分`;
+  }
+  function fmtTime(iso) {
+    if (!iso) return "未知";
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? "未知" : date.toLocaleTimeString("zh-CN", { hour12: false });
+  }
+  function dotClass(service) {
+    if (!service) return "dot";
+    return `dot ${service.reachable ? "online pulse" : "offline"}`;
+  }
+  function statusWord(reachable) { return reachable ? "在线" : "离线"; }
+  function describeGpuError(text) {
+    const value = String(text || "");
+    if (/sufficient permissions|administrator|access is denied/i.test(value)) return "需要管理员权限才能读取显存；不影响启动和生成。";
+    if (!value) return "未检测到 NVIDIA 显卡";
+    return value;
+  }
+
+  function showToast(text, kind = "ok") {
+    const el = $("toast");
+    el.textContent = text;
+    el.className = `toast show ${kind}`;
+    clearTimeout(state.toastTimer);
+    state.toastTimer = setTimeout(() => { el.className = "toast"; }, 4200);
+  }
+
+  function confirmAction(title, text, okLabel) {
+    const dialog = $("confirmDialog");
+    $("confirmTitle").textContent = title;
+    $("confirmText").textContent = text;
+    $("confirmOk").textContent = okLabel;
+    if (typeof dialog.showModal !== "function") return Promise.resolve(window.confirm(text));
+    dialog.returnValue = "";
+    dialog.showModal();
+    return new Promise((resolve) => {
+      state.confirmResolve = resolve;
+    });
+  }
+
+  function closeConfirm(value) {
+    const dialog = $("confirmDialog");
+    if (dialog.open) dialog.close(value ? "ok" : "cancel");
+    const resolve = state.confirmResolve;
+    state.confirmResolve = null;
+    if (resolve) resolve(Boolean(value));
+  }
+
+  $("confirmCancel").addEventListener("click", () => closeConfirm(false));
+  $("confirmOk").addEventListener("click", () => closeConfirm(true));
+  $("confirmDialog").addEventListener("cancel", (event) => { event.preventDefault(); closeConfirm(false); });
+
+  function renderOverall(status) {
+    const comfy = status?.services?.comfy;
+    const gateway = status?.services?.gateway;
+    const canvas = status?.services?.canvas;
+    const online = [comfy?.reachable, gateway?.reachable, canvas?.reachable].filter(Boolean).length;
+    const total = 3;
+    const dot = $("overallDot");
+    dot.className = online === total ? "dot online pulse" : online > 0 ? "dot warn" : "dot offline";
+    $("overallTitle").textContent = online === total ? "全部服务在线" : `${online}/${total} 个服务在线`;
+    $("overallText").textContent = status ? `启动器已运行 ${fmtUptime(status.uptimeSec)}` : "连接启动器控制接口…";
+  }
+
+  function serviceRow(key, name, subtitle, service, actions) {
+    const addr = service?.url || "";
+    return `
+      <article class="service" data-service="${key}">
+        <span class="${dotClass(service)}" aria-hidden="true"></span>
+        <div class="svc-name">
+          <strong>${escapeHtml(name)}</strong>
+          <span>${escapeHtml(subtitle)}</span>
+        </div>
+        <div class="svc-addr">${addr ? `<a href="${escapeHtml(addr)}" target="_blank" rel="noopener noreferrer">${escapeHtml(addr)}</a>` : `<span style="font-size:11.5px;color:var(--faint)">未配置地址</span>`}</div>
+        <div class="svc-meta"><span class="state">${statusWord(service?.reachable)}</span>${service?.pid ? ` · PID ${service.pid}` : ""}${service?.adopted ? " · 接管" : service?.managed ? " · 启动器管理" : ""}</div>
+        <div class="svc-actions">${actions}</div>
+      </article>`;
+  }
+
+  function renderServices(status) {
+    const s = status.services;
+    const comfyActions = [
+      `<a class="btn small ghost" href="${escapeHtml(s.comfy.url)}" target="_blank" rel="noopener noreferrer">打开</a>`,
+      s.comfy.reachable
+        ? `<button class="btn small ghost" type="button" data-action="restart-comfy">重启</button><button class="btn small danger" type="button" data-action="stop-comfy">停止</button>`
+        : `<button class="btn small primary" type="button" data-action="start-comfy">启动</button>`,
+    ].join("");
+    const gatewayActions = [
+      `<a class="btn small ghost" href="${escapeHtml(s.gateway.url)}/admin" target="_blank" rel="noopener noreferrer">管理</a>`,
+      s.gateway.reachable
+        ? `<button class="btn small ghost" type="button" data-action="restart-gateway">重启</button><button class="btn small danger" type="button" data-action="stop-gateway">停止</button>`
+        : `<button class="btn small primary" type="button" data-action="start-gateway">启动</button>`,
+    ].join("");
+    const canvasActions = `<a class="btn small primary" href="${escapeHtml(s.canvas.url)}" target="_blank" rel="noopener noreferrer">打开</a>`;
+
+    const comfySub = s.comfy.managed ? "本地生成后端 · 启动器启动" : s.comfy.adopted ? "本地生成后端 · 已接管" : "本地生成后端";
+    const gatewaySub = s.gateway.managed ? "OpenAI 兼容网关 · 启动器启动" : "OpenAI 兼容网关";
+    const canvasSub = "画布静态站点 · 启动器托管";
+
+    $("serviceList").innerHTML =
+      serviceRow("comfy", "ComfyUI", comfySub, s.comfy, comfyActions) +
+      serviceRow("gateway", "网关", gatewaySub, s.gateway, gatewayActions) +
+      serviceRow("canvas", "画布", canvasSub, s.canvas, canvasActions);
+    wireActionButtons();
+  }
+
+  function renderConfig(status) {
+    const c = status.config;
+    $("configList").innerHTML = `
+      <div><dt>ComfyUI 目录</dt><dd>${escapeHtml(c.comfyDir || "未设置")}</dd></div>
+      <div><dt>工作流目录</dt><dd>${escapeHtml(c.comfyWorkflowsDir || "未设置")}</dd></div>
+      <div><dt>端口</dt><dd>网关 ${c.gatewayPort} · 画布 ${c.canvasPort} · 控制 ${c.controlPort}</dd></div>
+      <div><dt>局域网</dt><dd>${c.allowLan ? "已允许（仅可信内网）" : "仅本机 127.0.0.1"}</dd></div>`;
+    $("railFooter").textContent = `版本 ${status.version} · 工作区 ${status.workspace}`;
+  }
+
+  function renderMetrics(status) {
+    const gpu = status.system?.gpu?.[0];
+    const ram = status.system?.ram;
+    const at = status.system?.at;
+    $("metricsAt").textContent = at ? `更新于 ${fmtTime(at)}` : "";
+
+    if (!gpu && !ram) {
+      $("metrics").innerHTML = `<div class="empty-note">没有可用的硬件读数。</div>`;
+      return;
+    }
+    const vramPct = gpu ? Math.min(100, Math.round((gpu.memoryUsedMb / (gpu.memoryTotalMb || 1)) * 100)) : 0;
+    const ramPct = ram ? Math.min(100, Math.round((ram.usedBytes / (ram.totalBytes || 1)) * 100)) : 0;
+    const barClass = (pct) => (pct >= 90 ? "bar hot" : pct >= 75 ? "bar warn" : "bar");
+
+    $("metrics").innerHTML = `
+      <div>
+        <div class="metric-head"><span>显存</span><b>${gpu ? `${(gpu.memoryUsedMb / 1024).toFixed(1)} / ${(gpu.memoryTotalMb / 1024).toFixed(1)} GB` : "不可用"}</b></div>
+        <div class="${barClass(vramPct)}"><i style="width:${vramPct}%"></i></div>
+        <div class="metric-note">${gpu ? `${escapeHtml(gpu.name)} · 利用率 ${gpu.utilization}% · ${gpu.temperature}°C` : escapeHtml(describeGpuError(status.system?.gpuError))}</div>
+      </div>
+      <div>
+        <div class="metric-head"><span>内存</span><b>${ram ? `${(ram.usedBytes / 1024 ** 3).toFixed(1)} / ${(ram.totalBytes / 1024 ** 3).toFixed(1)} GB` : "不可用"}</b></div>
+        <div class="${barClass(ramPct)}"><i style="width:${ramPct}%"></i></div>
+        <div class="metric-note">系统内存占用 ${ramPct}%</div>
+      </div>`;
+  }
+
+  async function refreshStatus() {
+    try {
+      const response = await fetch("/api/status", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const status = await response.json();
+      state.status = status;
+      $("errorBanner").hidden = true;
+      renderOverall(status);
+      renderServices(status);
+      renderConfig(status);
+      renderMetrics(status);
+
+      const canvas = $("openCanvas");
+      canvas.href = status.services.canvas.url;
+      canvas.removeAttribute("aria-disabled");
+      const admin = $("openAdmin");
+      admin.href = `${status.services.gateway.url}/admin`;
+      admin.removeAttribute("aria-disabled");
+      $("updated").textContent = `更新于 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
+      $("servicesHint").textContent = `本机 · 启动器 ${status.version}`;
+    } catch (error) {
+      $("errorBanner").hidden = false;
+      $("errorBanner").innerHTML = `<span aria-hidden="true">●</span><div>无法读取启动器状态：<code>${escapeHtml(error instanceof Error ? error.message : error)}</code>。启动器可能已退出，或控制端口被占用。</div>`;
+      renderOverall(null);
+    }
+  }
+
+  function setBusy(busy, action) {
+    state.busy = busy;
+    document.body.querySelectorAll("button[data-action]").forEach((button) => {
+      button.disabled = busy;
+      if (busy && button.dataset.action === action) {
+        button.dataset.original = button.textContent;
+        button.textContent = SLOW_ACTIONS.has(action) ? "处理中…" : "处理中";
+      } else if (!busy && button.dataset.original) {
+        button.textContent = button.dataset.original;
+        delete button.dataset.original;
+      }
+    });
+  }
+
+  async function runAction(action) {
+    if (state.busy) return;
+    const label = ACTION_LABELS[action] || action;
+    if (action === "stop-comfy") {
+      const ok = await confirmAction("停止 ComfyUI？", "正在运行或排队的生成任务会被中断。下次生成前需要重新启动。", "停止 ComfyUI");
+      if (!ok) return;
+    }
+    if (action === "restart-comfy") {
+      const ok = await confirmAction("重启 ComfyUI？", "会强制结束当前 ComfyUI 进程、检测显存后重新拉起，正在运行的任务会中断。", "重启 ComfyUI");
+      if (!ok) return;
+    }
+    if (action === "stop-gateway") {
+      const ok = await confirmAction("停止网关？", "停止后画布无法生成内容，也不会自动恢复；需要在这里重新启动。", "停止网关");
+      if (!ok) return;
+    }
+    if (action === "shutdown") {
+      const ok = await confirmAction("关闭整个工作台？", "会停止网关、启动器启动的 ComfyUI，并退出启动器。接管的 ComfyUI 按配置处理。", "关闭工作台");
+      if (!ok) return;
+    }
+
+    setBusy(true, action);
+    if (action === "shutdown") {
+      try {
+        await fetch("/shutdown", { method: "POST" });
+      } catch {
+        /* 启动器退出会中断响应，属于预期 */
+      }
+      showToast("工作台正在关闭，可以关闭此页面", "ok");
+      return;
+    }
+    try {
+      const response = await fetch(`/${action}`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      showToast(`${label}已完成`, "ok");
+      await refreshStatus();
+    } catch (error) {
+      showToast(`${label}失败：${error instanceof Error ? error.message : error}`, "error");
+    } finally {
+      setBusy(false, action);
+    }
+  }
+
+  function wireActionButtons() {
+    document.body.querySelectorAll("button[data-action]").forEach((button) => {
+      if (button.dataset.wired) return;
+      button.dataset.wired = "1";
+      button.addEventListener("click", () => void runAction(button.dataset.action));
+    });
+  }
+
+  function renderLogs(text) {
+    const view = $("logView");
+    if (!text.trim()) {
+      view.innerHTML = `<span class="log-empty">暂无日志。</span>`;
+      return;
+    }
+    const escaped = text
+      .split("\n")
+      .map((line) => {
+        const tag = /\[(ERROR|WARN)\]/.exec(line)?.[1];
+        return tag ? `<span class="lvl-${tag}">${escapeHtml(line)}</span>` : escapeHtml(line);
+      })
+      .join("\n");
+    const nearBottom = view.scrollHeight - view.scrollTop - view.clientHeight < 48;
+    view.innerHTML = escaped;
+    if ($("autoScroll").checked || nearBottom) view.scrollTop = view.scrollHeight;
+  }
+
+  async function refreshLogs() {
+    try {
+      const response = await fetch("/api/logs?lines=200", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      if (data.text === state.lastLog) return;
+      state.lastLog = data.text;
+      renderLogs(data.text);
+    } catch {
+      $("logView").innerHTML = `<span class="log-empty">无法读取启动器日志。</span>`;
+    }
+  }
+
+  function schedule() {
+    clearInterval(state.pollTimer);
+    clearInterval(state.logTimer);
+    if (!$("autoRefresh").checked) return;
+    state.pollTimer = setInterval(() => { if (!document.hidden) void refreshStatus(); }, 3000);
+    state.logTimer = setInterval(() => { if (!document.hidden) void refreshLogs(); }, 3000);
+  }
+
+  $("refresh").addEventListener("click", () => { void refreshStatus(); void refreshLogs(); });
+  $("refreshLogs").addEventListener("click", () => void refreshLogs());
+  $("autoRefresh").addEventListener("change", schedule);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { void refreshStatus(); void refreshLogs(); } });
+
+  const compact = window.matchMedia("(max-width: 880px)");
+  const syncConfigDetails = () => { $("configDetails").open = !compact.matches; };
+  syncConfigDetails();
+  if (typeof compact.addEventListener === "function") compact.addEventListener("change", syncConfigDetails);
+
+  wireActionButtons();
+  void refreshStatus();
+  void refreshLogs();
+  schedule();
+})();
+</script>
+</body>
+</html>

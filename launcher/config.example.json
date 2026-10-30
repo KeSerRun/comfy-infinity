@@ -10,6 +10,7 @@
   "comfyStartTimeoutSec": 300,
   "gatewayStartTimeoutSec": 30,
   "openBrowser": true,
+  "openConsole": true,
   "closeCanvasStopsBackend": true,
   "stopAdoptedComfyOnCanvasClose": true,
   "canvasIdleGraceSec": 30,

@@ -21,12 +21,25 @@ start-local.bat
   └─ launcher/start.mjs
        ├─ ComfyUI         :8188   检测 / 接管 / 拉起
        ├─ comfyui-gateway :8190   OpenAI 兼容网关 + 任务/预览/系统接口
-       └─ canvas          :3000   托管 infinite-canvas/web/dist
+       ├─ canvas          :3000   托管 infinite-canvas/web/dist
+       └─ console         :8290   启动器控制台（状态 / 启停 / 日志）
 
 画布 :3000  →  网关 :8190  →  ComfyUI :8188
+控制台 :8290  →  启动器控制接口
 ```
 
 画布 3000 被占用时回退到 3001–3010；网关端口默认 8190。
+
+## 启动器控制台
+
+启动后默认打开 `http://127.0.0.1:8290/`（由 `controlPort` 决定）：
+
+- 查看 ComfyUI、网关、画布的在线状态、地址和 PID。
+- 启动 / 停止 / 重启网关，启动 / 停止 / 重启 ComfyUI，打开画布与网关管理页。
+- 查看显卡、内存占用和启动器实时日志。
+- 关闭整个工作台。
+
+不想自动打开可设置 `launcher/config.json` 的 `"openConsole": false`，恢复直接打开画布。
 
 ## 快速开始
 

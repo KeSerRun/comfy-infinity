@@ -20,6 +20,8 @@ comfyui-gateway/test/.tmp/
 infinite-canvas/.next/
 infinite-canvas/out/
 infinite-canvas/plugins/canvas/*/dist/
+# launcher rewrites this at runtime with the actual gateway address
+infinite-canvas/web/dist/config.js
 
 # editor / OS
 .DS_Store

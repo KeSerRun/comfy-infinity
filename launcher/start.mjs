@@ -47,6 +47,7 @@ const DEFAULT_CONFIG = {
   comfyStartTimeoutSec: 300,
   gatewayStartTimeoutSec: 30,
   openBrowser: true,
+  openConsole: true,
   closeCanvasStopsBackend: true,
   stopAdoptedComfyOnCanvasClose: true,
   canvasIdleGraceSec: 30,
@@ -149,6 +150,7 @@ function loadConfig() {
     comfyStartTimeoutSec: Number(merged.comfyStartTimeoutSec) > 0 ? Number(merged.comfyStartTimeoutSec) : 300,
     gatewayStartTimeoutSec: Number(merged.gatewayStartTimeoutSec) > 0 ? Number(merged.gatewayStartTimeoutSec) : 30,
     openBrowser: merged.openBrowser !== false,
+    openConsole: merged.openConsole !== false,
     closeCanvasStopsBackend: process.env.CLOSE_CANVAS_STOPS_BACKEND !== "0" && merged.closeCanvasStopsBackend !== false,
     stopAdoptedComfyOnCanvasClose: process.env.STOP_ADOPTED_COMFY !== "0" && merged.stopAdoptedComfyOnCanvasClose !== false,
     canvasIdleGraceSec: resolveIdleGraceSec(merged),
@@ -934,6 +936,7 @@ function openBrowser(url) {
 /* ------------------------------------------------------------ 生命周期 */
 
 const state = {
+  startedAt: Date.now(),
   comfyChild: null,
   adoptedComfyUrl: null,
   comfyUrl: null,
@@ -973,12 +976,20 @@ function readSystemStats() {
   let gpuError = null;
   try {
     if (process.platform === "win32") {
-      const result = spawnSync(
+      const args = ["--query-gpu=index,name,memory.used,memory.total,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"];
+      const candidates = [
         "nvidia-smi",
-        ["--query-gpu=index,name,memory.used,memory.total,utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
-        { encoding: "utf8", windowsHide: true, timeout: 3000 },
-      );
-      if (result.status !== 0) throw new Error(String(result.stderr || "nvidia-smi 执行失败").trim());
+        path.join(process.env.SystemRoot || "C:\\Windows", "System32", "nvidia-smi.exe"),
+      ];
+      let result = null;
+      for (const command of candidates) {
+        result = spawnSync(command, args, { encoding: "utf8", windowsHide: true, timeout: 3000 });
+        if (result.status === 0) break;
+      }
+      if (!result || result.status !== 0) {
+        const detail = String(result?.stderr || result?.stdout || "").trim();
+        throw new Error(detail || "nvidia-smi 执行失败");
+      }
       gpu = String(result.stdout || "")
         .split(/\r?\n/)
         .map((line) => line.trim())
@@ -1252,13 +1263,238 @@ async function restartComfy(cfg) {
   }
 }
 
+async function collectStatus(cfg) {
+  const comfyUrl = state.comfyUrl || cfg.comfyUrl;
+  const [comfyReachable, gateway, canvas] = await Promise.all([
+    probeComfy(comfyUrl, 900),
+    httpGet(`${cfg.gatewayUrl}/health`, 1500),
+    httpGet(`${cfg.canvasUrl}/`, 1500),
+  ]);
+  const system = readSystemStats();
+  return {
+    ok: true,
+    version: readLauncherVersion(),
+    startedAt: new Date(state.startedAt).toISOString(),
+    uptimeSec: Math.round((Date.now() - state.startedAt) / 1000),
+    workspace: ROOT,
+    restarting: state.restarting,
+    config: {
+      comfyUrl,
+      comfyDir: cfg.comfyDir,
+      comfyWorkflowsDir: cfg.comfyWorkflowsDir,
+      gatewayPort: cfg.gatewayPort,
+      controlPort: cfg.controlPort,
+      canvasPort: cfg.canvasPort,
+      allowLan: cfg.allowLan,
+      gatewayDir: cfg.gatewayDir,
+      canvasDist: cfg.canvasDist,
+      closeCanvasStopsBackend: cfg.closeCanvasStopsBackend,
+      stopAdoptedComfyOnCanvasClose: cfg.stopAdoptedComfyOnCanvasClose,
+    },
+    services: {
+      comfy: {
+        reachable: Boolean(comfyReachable),
+        url: comfyUrl,
+        managed: Boolean(state.comfyChild),
+        adopted: Boolean(state.adoptedComfyUrl),
+        pid: state.comfyChild?.pid || null,
+      },
+      gateway: {
+        reachable: Boolean(gateway.ok && gateway.json),
+        url: cfg.gatewayUrl,
+        managed: Boolean(state.gatewayChild),
+        pid: state.gatewayChild?.pid || null,
+        health: gateway.json,
+      },
+      canvas: {
+        reachable: Boolean(canvas.ok),
+        url: cfg.canvasUrl,
+        managed: Boolean(state.canvasServer),
+      },
+    },
+    system: {
+      at: system.at,
+      gpu: system.gpu,
+      gpuError: system.gpuError,
+      ram: system.ram,
+    },
+    logs: { path: LOG_PATH },
+  };
+}
+
+async function startGatewayProcess(cfg) {
+  if (state.gatewayChild) {
+    const error = new Error("网关已在运行");
+    error.status = 409;
+    throw error;
+  }
+  await ensureGatewayDeps(cfg);
+  const comfyUrl = state.comfyUrl || cfg.comfyUrl;
+  const workflowsDir = cfg.comfyWorkflowsDir || "";
+  state.gatewayComfyUrl = comfyUrl;
+  state.gatewayWorkflowsDir = workflowsDir;
+  state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);
+  log(`控制台启动网关：PID=${state.gatewayChild.pid}`);
+  const hit = await waitFor(
+    "网关（控制台启动）",
+    async () => {
+      const res = await httpGet(`${cfg.gatewayUrl}/health`, 2000);
+      return res.ok && res.json ? { url: cfg.gatewayUrl } : null;
+    },
+    cfg.gatewayStartTimeoutSec,
+    { intervalMs: 1000, progressEveryMs: 5000 },
+  );
+  if (!hit) throw new Error("网关未在超时内就绪");
+  return { ok: true, pid: state.gatewayChild.pid, url: cfg.gatewayUrl };
+}
+
+function stopGatewayProcess() {
+  if (!state.gatewayChild) {
+    const error = new Error("网关不是本启动器启动的，无法由控制台停止");
+    error.status = 409;
+    throw error;
+  }
+  const child = state.gatewayChild;
+  state.gatewayChild = null;
+  killOurChild(child, "网关");
+  log("控制台停止网关");
+  return { ok: true };
+}
+
+async function startComfyProcess(cfg) {
+  const targetUrl = state.comfyUrl || cfg.comfyUrl;
+  if (await probeComfy(targetUrl, 900)) {
+    const error = new Error("ComfyUI 已在运行");
+    error.status = 409;
+    throw error;
+  }
+  const install = findComfyInstall(cfg);
+  const plan = resolveLaunchPlan(install);
+  if (!plan) throw new Error(`未找到 ComfyUI 启动方式（comfyDir=${cfg.comfyDir || "空"}）`);
+  const launchPort = plan.kind === "python" ? await pickFreePort(comfyPortCandidates(cfg)) : COMFY_PORT_FIRST;
+  state.comfyChild = spawnComfy(plan, launchPort);
+  state.adoptedComfyUrl = null;
+  log(`控制台启动 ComfyUI：PID=${state.comfyChild.pid}`);
+  const ready = await waitFor(
+    "ComfyUI（控制台启动）",
+    async () => probeAnyComfy(comfyPortCandidates(cfg), 900),
+    cfg.comfyStartTimeoutSec,
+    { intervalMs: 2000, progressEveryMs: 15000 },
+  );
+  if (!ready) throw new Error("ComfyUI 未在超时内就绪");
+  state.comfyUrl = ready.url;
+  return { ok: true, pid: state.comfyChild?.pid || null, url: ready.url };
+}
+
+async function stopComfyProcess(cfg) {
+  const targetUrl = state.comfyUrl || cfg.comfyUrl;
+  const port = portFromUrl(targetUrl);
+  let stopped = false;
+  for (const pid of listenerPids(port)) {
+    const result = spawnSync("taskkill", ["/PID", pid, "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    log(result.status === 0 ? `控制台停止 ComfyUI（PID ${pid}）` : `停止 ComfyUI（PID ${pid}）失败`, result.status === 0 ? "INFO" : "WARN");
+    stopped = result.status === 0 || stopped;
+  }
+  if (state.comfyChild) {
+    killOurChild(state.comfyChild, "ComfyUI");
+    state.comfyChild = null;
+    stopped = true;
+  }
+  state.adoptedComfyUrl = null;
+  if (!stopped && !(await probeComfy(targetUrl, 700))) return { ok: true, alreadyStopped: true };
+
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    if (!(await probeComfy(targetUrl, 700))) return { ok: true };
+    await delay(500);
+  }
+  throw new Error(`ComfyUI 端口 ${port} 未能在 20 秒内释放`);
+}
+
+function readLauncherVersion() {
+  try {
+    return fs.readFileSync(path.join(ROOT, "VERSION"), "utf8").trim() || "dev";
+  } catch {
+    return "dev";
+  }
+}
+
+function tailLauncherLog(lines = 200) {
+  const limit = Math.max(20, Math.min(2000, Number(lines) || 200));
+  try {
+    const stat = fs.statSync(LOG_PATH);
+    if (!stat.size) return "";
+    const size = Math.min(stat.size, 512 * 1024);
+    const buffer = Buffer.alloc(size);
+    const fd = fs.openSync(LOG_PATH, "r");
+    try {
+      fs.readSync(fd, buffer, 0, size, stat.size - size);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
+    return text.split(/\r?\n/).slice(-limit).join("\n");
+  } catch {
+    return "";
+  }
+}
+
+let consoleHtmlCache = null;
+function readConsoleHtml() {
+  if (consoleHtmlCache === null) {
+    consoleHtmlCache = fs.readFileSync(path.join(__dirname, "console.html"), "utf8");
+  }
+  return consoleHtmlCache;
+}
+
 async function startControlServer(cfg) {
   const server = http.createServer(async (req, res) => {
     res.setHeader("content-type", "application/json; charset=utf-8");
     try {
       const pathname = new URL(req.url, "http://127.0.0.1").pathname;
+      if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
+        try {
+          res.setHeader("content-type", "text/html; charset=utf-8");
+          res.setHeader("cache-control", "no-store");
+          res.setHeader("content-security-policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'");
+          res.end(readConsoleHtml());
+        } catch (error) {
+          res.statusCode = 500;
+          res.setHeader("content-type", "text/plain; charset=utf-8");
+          res.end(`控制台页面读取失败：${error.message}`);
+        }
+        return;
+      }
       if (req.method === "GET" && pathname === "/health") {
         res.end(JSON.stringify({ ok: true, restarting: state.restarting }));
+        return;
+      }
+      if (req.method === "GET" && pathname === "/api/status") {
+        res.end(JSON.stringify(await collectStatus(cfg)));
+        return;
+      }
+      if (req.method === "GET" && pathname === "/api/logs") {
+        const lines = Number(new URL(req.url, "http://127.0.0.1").searchParams.get("lines")) || 200;
+        res.end(JSON.stringify({ ok: true, path: LOG_PATH, text: tailLauncherLog(lines) }));
+        return;
+      }
+      if (req.method === "POST" && pathname === "/start-gateway") {
+        res.setTimeout(120000);
+        res.end(JSON.stringify(await startGatewayProcess(cfg)));
+        return;
+      }
+      if (req.method === "POST" && pathname === "/stop-gateway") {
+        res.end(JSON.stringify(stopGatewayProcess()));
+        return;
+      }
+      if (req.method === "POST" && pathname === "/start-comfy") {
+        res.setTimeout(360000);
+        res.end(JSON.stringify(await startComfyProcess(cfg)));
+        return;
+      }
+      if (req.method === "POST" && pathname === "/stop-comfy") {
+        res.setTimeout(60000);
+        res.end(JSON.stringify(await stopComfyProcess(cfg)));
         return;
       }
       if (req.method === "POST" && pathname === "/restart-gateway") {
@@ -1267,13 +1503,12 @@ async function startControlServer(cfg) {
           res.end(JSON.stringify({ ok: false, error: "网关不是本启动器启动的，无法原地重启" }));
           return;
         }
-        await ensureGatewayDeps(cfg);
         const previous = state.gatewayChild;
         state.gatewayChild = null;
         killOurChild(previous, "网关");
         await delay(600);
-        state.gatewayChild = spawnGateway(cfg, state.gatewayComfyUrl || cfg.comfyUrl, state.gatewayWorkflowsDir || "");
-        res.end(JSON.stringify({ ok: true, pid: state.gatewayChild.pid }));
+        res.setTimeout(120000);
+        res.end(JSON.stringify(await startGatewayProcess(cfg)));
         return;
       }
       if (req.method === "POST" && pathname === "/shutdown") {
@@ -1335,7 +1570,7 @@ async function startControlServer(cfg) {
     });
     server.listen(cfg.controlPort, "127.0.0.1", () => {
       state.controlServer = server;
-      log(`控制接口已启动：${cfg.controlUrl}（ComfyUI 清理重启）`);
+      log(`控制接口已启动：${cfg.controlUrl}/（启动器控制台 + ComfyUI 清理重启）`);
       resolve(true);
     });
   });
@@ -1567,12 +1802,14 @@ async function main() {
   log(`网关    : ${fmtStatus(gatewayResult.mode)}  ${gatewayResult.url}`);
   if (cfg.gatewayPublicUrl && cfg.gatewayPublicUrl !== gatewayResult.url) log(`对外网关: ${cfg.gatewayPublicUrl}`);
   log(`画布    : ${fmtStatus(canvasResult.mode)}  ${canvasResult.url}`);
+  if (state.controlServer) log(`控制台  : 已启动  ${cfg.controlUrl}/`);
   log("------------------------------------------");
   if (!DRY_RUN) startSessionWatchdog(cfg, gatewayResult.url);
 
-  const target = comfyReady ? `${canvasResult.url}/` : `${cfg.gatewayUrl}/admin`;
+  const consoleReady = Boolean(state.controlServer);
+  const target = consoleReady && cfg.openConsole ? `${cfg.controlUrl}/` : comfyReady ? `${canvasResult.url}/` : `${cfg.gatewayUrl}/admin`;
   if (!comfyReady) {
-    log("ComfyUI 未就绪：打开 /admin 查看真实状态，而不是画布。", "WARN");
+    log("ComfyUI 未就绪：控制台会显示真实状态；也可打开 /admin 查看网关。", "WARN");
   }
   if (DRY_RUN) {
     log(`[dry-run] 将打开：${target}`);
@@ -1581,6 +1818,7 @@ async function main() {
   }
 
   if (cfg.openBrowser) openBrowser(target);
+  else if (consoleReady) log(`config.openBrowser=false，启动器控制台：${cfg.controlUrl}/`);
   else log(`config.openBrowser=false，未自动打开：${target}`);
 
   log("启动器前台运行中。按 Ctrl+C 只停止本启动器启动的进程；关闭画布最后一个页面会按配置停止后台（含接管的 ComfyUI）。");
