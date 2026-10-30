@@ -26,8 +26,7 @@ Infinite Canvas :3000
 - `GET /v1/videos/:id`、`GET /v1/videos/:id/content`、`POST /v1/videos/:id/cancel`
 - `POST /v1/prompts/optimize`、`POST /v1/prompts/optimize-image`
 - `GET /api/setup/status`、`GET /api/workflows`、`GET /api/workflows/:id/schema`
-- `GET /api/system/stats`、`POST /api/system/free-memory`、`POST /api/system/restart-comfy`
-- `GET /api/update/check`、`POST /api/update/apply`
+- `GET /api/system/stats`、`POST /api/system/free-memory`、`POST /api/system/restart-comfy`、`POST /api/system/shutdown`
 - `GET /api/loras`
 - 管理页：`/admin`
 
@@ -68,12 +67,7 @@ node src/server.js
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | 允许的画布来源 |
 | `TASK_RETENTION_DAYS` | `0` | 任务/输出保留天数；0 不清理 |
 | `MAX_STORED_TASKS` | `0` | 最多保留任务数；0 不限制 |
-| `UPDATE_ENABLED` | `1` | 开启更新检查/应用；设 `0` 关闭 |
-| `UPDATE_MANIFEST_PATH` | `<项目根>/update.json` | 本地更新清单 |
-| `UPDATE_MANIFEST_URL` | 空 | 非 Git 安装的远端清单地址 |
-| `UPDATE_REMOTE` / `UPDATE_BRANCH` | `origin` / `main` | Git 更新远端与分支 |
-| `UPDATE_FETCH_TIMEOUT_MS` | `15000` | `git fetch` / 清单请求超时 |
-| `UPDATE_APPLY_TIMEOUT_MS` | `120000` | `git pull` 超时 |
+| `RESOURCES_INDEX_URL` | 空 | 可选：资源索引远端地址；默认只用本地 `resources/index.json` |
 
 ## 无 GPU 联调
 
@@ -91,7 +85,7 @@ Mock 只验证协议与占位图，不验证真实出图质量。
 
 ## 更新
 
-`GET /api/update/check` 比较项目根目录的 `VERSION` / `update.json` 与远端（Git 安装读 `origin/main`，压缩包安装可配 `UPDATE_MANIFEST_URL`）。`POST /api/update/apply` 只对 Git 克隆且工作区干净时执行 `git pull --ff-only`；有任务运行、工作区有修改或非 Git 安装会拒绝。更新后需重启 `start-local.bat`。
+本个人版不包含应用内更新；升级时直接替换程序文件，保留 `data/`、模型和 `launcher/config.json`。
 
 ## 测试
 

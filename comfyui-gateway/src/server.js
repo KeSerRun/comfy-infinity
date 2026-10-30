@@ -31,7 +31,6 @@ import { runImage, runVideo, runWorkflow } from "./runner.js";
 import { createSkinUnlockStore } from "./skin-unlocks.js";
 import { readSystemStats } from "./system-stats.js";
 import { createTaskStore } from "./tasks.js";
-import { applyUpdate, checkForUpdate, getUpdateProgress } from "./update.js";
 import { uploadImages } from "./uploads.js";
 import { createWorkflowVisibilityStore } from "./workflow-visibility.js";
 import { alignH3Frames, capH3ReferenceFrames, framesFromSeconds, extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
@@ -547,23 +546,6 @@ export async function createGatewayApp(overrides = {}) {
       freedRamBytes,
       durationMs: Date.now() - started,
     });
-  });
-
-  app.get("/api/update/check", async (req, res) => {
-    const fetchRemote = req.query.fetch === "1" || req.query.fetch === "true";
-    res.json(await checkForUpdate(config, { fetchRemote }));
-  });
-
-  app.get("/api/update/progress", (_req, res) => {
-    res.json({ ok: true, progress: getUpdateProgress() });
-  });
-
-  app.post("/api/update/apply", async (req, res) => {
-    const active = tasks.list().some((task) => ["queued", "running"].includes(task.status));
-    if (active) {
-      throw new HttpError("有正在运行的生成任务，请等待完成或取消后再更新", { status: 409, code: "tasks_running" });
-    }
-    res.json(await applyUpdate(config, { dryRun: req.body?.dryRun === true, force: req.body?.force === true }));
   });
 
   app.post("/api/system/restart-comfy", async (_req, res) => {

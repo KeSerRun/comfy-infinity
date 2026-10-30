@@ -1,8 +1,7 @@
 import { RUNTIME_LOCAL_GATEWAY_HOST, RUNTIME_LOCAL_GATEWAY_PORT, RUNTIME_LOCAL_GATEWAY_URL } from "./runtime-config";
 
-// 本地模式：只保留 ComfyUI 网关，隐藏云端 API / WebDAV / Agent 等入口。
-// 设置 VITE_LOCAL_ONLY=0 可恢复完整界面。
-export const LOCAL_ONLY = import.meta.env.VITE_LOCAL_ONLY !== "0";
+// 个人单机版：固定只使用本地 ComfyUI 网关。
+export const LOCAL_ONLY = true;
 
 function runtimeGatewayBaseUrl() {
     if (RUNTIME_LOCAL_GATEWAY_URL) return RUNTIME_LOCAL_GATEWAY_URL.replace(/\/+$/, "").endsWith("/v1") ? RUNTIME_LOCAL_GATEWAY_URL.replace(/\/+$/, "") : `${RUNTIME_LOCAL_GATEWAY_URL.replace(/\/+$/, "")}/v1`;

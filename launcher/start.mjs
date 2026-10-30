@@ -557,8 +557,6 @@ function spawnComfy(plan, port = COMFY_PORT_FIRST) {
 /* ------------------------------------------------------------- 网关依赖自愈 */
 
 const GATEWAY_DEPS_ZIP = path.join(__dirname, "gateway-deps.zip");
-const GATEWAY_DEPS_URL = "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/gateway-deps.zip";
-const GATEWAY_DEPS_SHA256 = "cb6d48c8b9e003b7608f82e2bce3fa3e6b1c21b78c3ab9000a44c6eb3c52d7b2";
 
 function gatewayDepsReady(gatewayDir) {
   if (!isDir(gatewayDir)) return false;
@@ -583,46 +581,21 @@ function extractGatewayDeps(archive, destination) {
   if (result.status !== 0) throw new Error("解压网关依赖失败");
 }
 
-async function downloadGatewayDeps(destination) {
-  log("本机没有可用的网关依赖包，正在从魔搭镜像下载…", "WARN");
-  const response = await fetch(GATEWAY_DEPS_URL, { signal: AbortSignal.timeout(120000) });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const digest = crypto.createHash("sha256").update(buffer).digest("hex");
-  if (GATEWAY_DEPS_SHA256 && digest !== GATEWAY_DEPS_SHA256) throw new Error("依赖包 SHA256 校验失败");
-  await fsp.mkdir(path.dirname(destination), { recursive: true });
-  await fsp.writeFile(destination, buffer);
-  return destination;
-}
-
 let gatewayDepsRepair = null;
 
 function ensureGatewayDeps(cfg) {
   if (gatewayDepsReady(cfg.gatewayDir)) return Promise.resolve();
   if (!gatewayDepsRepair) {
     gatewayDepsRepair = (async () => {
-      const candidates = [];
-      if (isFile(GATEWAY_DEPS_ZIP)) candidates.push({ archive: GATEWAY_DEPS_ZIP, label: "随包" });
-      candidates.push({ remote: true, label: "魔搭镜像" });
-      const errors = [];
-      log("检测到网关依赖缺失或不完整，正在自动修复…", "WARN");
-      for (const candidate of candidates) {
-        try {
-          const archive = candidate.remote
-            ? await downloadGatewayDeps(path.join(ROOT, ".update", "gateway-deps", "gateway-deps.zip"))
-            : candidate.archive;
-          extractGatewayDeps(archive, cfg.gatewayDir);
-          if (gatewayDepsReady(cfg.gatewayDir)) {
-            log(`网关依赖已自动修复（${candidate.label}）。`);
-            return;
-          }
-          throw new Error("解压后仍无法加载 express/multer");
-        } catch (error) {
-          errors.push(`${candidate.label}：${error.message}`);
-          log(`网关依赖修复失败（${candidate.label}）：${error.message}`, "WARN");
-        }
+      if (!isFile(GATEWAY_DEPS_ZIP)) {
+        throw new Error(`网关依赖缺失，且找不到随包 ${GATEWAY_DEPS_ZIP}；请重新解压完整发布包，或在 comfyui-gateway 运行 npm install`);
       }
-      throw new Error(`网关依赖缺失，自动修复失败（${errors.join("；")}）`);
+      log("检测到网关依赖缺失或不完整，正在用随包依赖修复…", "WARN");
+      extractGatewayDeps(GATEWAY_DEPS_ZIP, cfg.gatewayDir);
+      if (!gatewayDepsReady(cfg.gatewayDir)) {
+        throw new Error("解压随包网关依赖后仍无法加载 express/multer；请在 comfyui-gateway 运行 npm install");
+      }
+      log("网关依赖已自动修复（随包）。");
     })().finally(() => {
       gatewayDepsRepair = null;
     });

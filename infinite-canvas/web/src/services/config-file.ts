@@ -1,21 +1,14 @@
 import { saveAs } from "file-saver";
 
 import i18n from "@/i18n";
-import { normalizePromptCloudConfig, useConfigStore, type AiConfig, type WebdavSyncConfig } from "@/stores/use-config-store";
-import { usePromptSourceStore, type PromptSourceSchedule } from "@/stores/use-prompt-source-store";
-import type { PromptSource } from "@/services/api/prompt-source-presets";
+import { normalizePromptCloudConfig, useConfigStore, type AiConfig } from "@/stores/use-config-store";
 
 type AppConfigFile = {
-    app: "infinite-canvas";
+    app: "comfy-infinity" | "infinite-canvas";
     version: 1;
     exportedAt: string;
     secretsStripped?: boolean;
     config: AiConfig;
-    webdav: WebdavSyncConfig;
-    promptSources: {
-        sources: PromptSource[];
-        schedule: PromptSourceSchedule;
-    };
 };
 
 const SECRET_KEY = /^(apiKey|password|token|secret|accessKey|secretKey|authorization)$|(apiKey|accessKey|secretKey|api_key|access_key|secret_key)$/i;
@@ -31,10 +24,9 @@ function redactSecrets<T>(value: T): T {
 }
 
 export function exportAppConfig() {
-    const { config, webdav } = useConfigStore.getState();
-    const { sources, schedule } = usePromptSourceStore.getState();
-    const data: AppConfigFile = redactSecrets({ app: "infinite-canvas", version: 1, exportedAt: new Date().toISOString(), secretsStripped: true, config, webdav, promptSources: { sources, schedule } });
-    saveAs(new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" }), "infinite-canvas-config.json");
+    const { config } = useConfigStore.getState();
+    const data: AppConfigFile = redactSecrets({ app: "comfy-infinity", version: 1, exportedAt: new Date().toISOString(), secretsStripped: true, config });
+    saveAs(new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" }), "comfy-infinity-config.json");
 }
 
 export async function importAppConfig(file: File) {
@@ -44,7 +36,7 @@ export async function importAppConfig(file: File) {
     } catch {
         throw new Error(i18n.t("config.invalidFile"));
     }
-    if (data.app !== "infinite-canvas" || data.version !== 1 || !data.config || !data.webdav || !data.promptSources) throw new Error(i18n.t("config.invalidFile"));
+    if (!["comfy-infinity", "infinite-canvas"].includes(data.app) || data.version !== 1 || !data.config) throw new Error(i18n.t("config.invalidFile"));
     const current = useConfigStore.getState();
     let nextConfig = normalizePromptCloudConfig(data.config);
     if (data.secretsStripped) {
@@ -53,16 +45,7 @@ export async function importAppConfig(file: File) {
             const existing = current.config.channels.find((item) => item.id === channel.id) || current.config.channels.find((item) => item.baseUrl === channel.baseUrl);
             return existing?.apiKey ? { ...channel, apiKey: existing.apiKey } : channel;
         });
-        const restoredApis = (nextConfig.promptCloudApis || []).map((api) => {
-            if (api.apiKey) return api;
-            const existing = current.config.promptCloudApis?.find((item) => item.id === api.id)
-                || current.config.promptCloudApis?.find((item) => item.baseUrl === api.baseUrl);
-            return existing?.apiKey ? { ...api, apiKey: existing.apiKey } : api;
-        });
-        nextConfig = normalizePromptCloudConfig({ ...nextConfig, promptCloudApis: restoredApis });
         if (!nextConfig.apiKey && current.config.apiKey) nextConfig.apiKey = current.config.apiKey;
     }
-    const nextWebdav = data.secretsStripped && !data.webdav.password ? { ...data.webdav, password: current.webdav.password } : data.webdav;
-    useConfigStore.setState({ config: nextConfig, webdav: nextWebdav });
-    usePromptSourceStore.setState(data.promptSources);
+    useConfigStore.setState({ config: nextConfig });
 }

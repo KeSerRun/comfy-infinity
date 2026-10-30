@@ -650,7 +650,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             }
         }
         const remoteUrls = [config.resourcesIndexUrl, config.resourcesIndexUrlBackup].filter(Boolean);
-        const shouldFetchRemote = forceRemote || !local;
+        const shouldFetchRemote = remoteUrls.length > 0 && (forceRemote || !local);
         if (shouldFetchRemote && remoteUrls.length) {
             let lastError = null;
             let remoteLoaded = false;
