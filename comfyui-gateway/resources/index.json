@@ -1399,6 +1399,7 @@
       "target": "LLM/sageattention",
       "module": "sageattention",
       "pipName": "sageattention",
+      "nvidiaOnly": true,
       "size": 16871451,
       "license": "Apache-2.0",
       "note": "H3 的 SageAttention 内存优化必需；按本机 Python/Torch/CUDA 自动选择 Windows 预编译包，全部走魔搭镜像。安装后需重启 ComfyUI。",

@@ -783,6 +783,10 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
         return { gpuName: "", vramTotalMb: 0, ramTotalBytes, ramFreeBytes, detectedAt: nowIso(), source: "none" };
     }
+    // TensorRT 只支持 NVIDIA CUDA；AMD/Intel 上无法编译 H3 TRT VAE engine。
+    function tensorRtSupported() {
+        return hardware?.source === "nvidia-smi" || /nvidia/i.test(String(hardware?.gpuName || ""));
+    }
     async function copyBundledSource(source, destination, jobItem, signal) {
         const root = path.resolve(config.rootDir);
         const file = path.resolve(root, String(source.path || "").replace(/^[/\\]+/, ""));
@@ -1067,13 +1071,22 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 return true;
             return !resourceMatch(dependency, root).present;
         }) : [];
-        const status = isBake
-            ? (exists ? "present" : missingRequires.length ? "blocked" : "missing")
-            : isNode
-                ? exists ? "present" : "missing"
-                : exists
-                    ? "present"
-                    : "missing";
+        const unsupportedReason = !tensorRtSupported()
+            ? isBake && resource.builder?.kind === "h3-trt-vae"
+                ? "当前显卡不是 NVIDIA，无法使用 TensorRT 编译 H3 TRT VAE engine"
+                : resource.nvidiaOnly === true
+                    ? "当前显卡不是 NVIDIA；该运行库只有 CUDA 预编译包，已跳过"
+                    : ""
+            : "";
+        const status = unsupportedReason
+            ? "unsupported"
+            : isBake
+                ? (exists ? "present" : missingRequires.length ? "blocked" : "missing")
+                : isNode
+                    ? exists ? "present" : "missing"
+                    : exists
+                        ? "present"
+                        : "missing";
         const installed = lock.installed?.[resource.id] || null;
         return {
             id: resource.id,
@@ -1092,6 +1105,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             builder: resource.builder || null,
             status,
             present: status === "present",
+            unsupportedReason,
             registered,
             exists,
             matchedFile: match.rel || "",
@@ -1687,6 +1701,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             const state = cachedResourceStatus(resource, comfyRoot());
             if (state.present)
                 continue;
+            if (state.status === "unsupported") {
+                problems.push({
+                    type: "unsupported",
+                    message: `当前硬件不支持：${state.label}（${state.unsupportedReason}）`,
+                    resourceId: id,
+                });
+                continue;
+            }
             const blocked = state.missingRequires?.length ? `（先安装 ${state.missingRequires.join("、")}）` : "";
             problems.push({
                 type: "runtime",
@@ -2628,15 +2650,22 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         if (job.status === "running") {
             const failed = job.items.filter((item) => item.status === "error").length;
             const hinted = job.items.some((item) => item.status === "error" && item.hint);
+            const skipped = job.items.filter((item) => item.status === "skipped").length;
             const restartRequired = job.items.some((item) => item.restartRequired);
             job.status = failed ? "error" : "done";
-            job.message = failed
-                ? hinted
+            if (failed) {
+                job.message = hinted
                     ? `${failed} 项失败，其中本机编译失败，请按提示交给 AI Agent 处理`
-                    : `${failed} 项失败，请查看日志或用备用源重试`
-                : restartRequired
-                    ? "资源已就绪，请手动重启 ComfyUI"
-                    : "资源已就绪";
+                    : `${failed} 项失败，请查看日志或用备用源重试`;
+            }
+            else {
+                const notes = [];
+                if (restartRequired)
+                    notes.push("请手动重启 ComfyUI");
+                if (skipped)
+                    notes.push(`已跳过 ${skipped} 项（当前显卡不支持 CUDA/TensorRT）`);
+                job.message = notes.length ? `资源已就绪，${notes.join("；")}` : "资源已就绪";
+            }
             job.error = failed ? "部分资源安装失败" : "";
         }
         updateJob(job);
@@ -2659,10 +2688,15 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const selected = selectResources({ ids, packs, workflows });
         const root = comfyRoot();
         const missing = [];
+        const skipped = [];
         for (const resource of selected) {
             const statusItem = resourceStatus(resource, root);
             if (statusItem.status === "present")
                 continue;
+            if (statusItem.status === "unsupported") {
+                skipped.push({ resource, reason: statusItem.unsupportedReason });
+                continue;
+            }
             if (resource.type === "bake" && statusItem.status === "blocked") {
                 // Dependencies are added by selectResources; keep the bake queued.
             }
@@ -2671,27 +2705,41 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const job = {
             id: `res_${crypto.randomBytes(6).toString("hex")}`,
             status: "running",
-            message: missing.length ? "安装中" : "资源已齐全",
+            message: missing.length ? "安装中" : skipped.length ? "部分资源已跳过" : "资源已齐全",
             createdAt: nowIso(),
             updatedAt: nowIso(),
-            items: missing.map((resource) => ({
-                id: resource.id,
-                label: resource.label || resource.id,
-                type: resource.type || "model",
-                status: "queued",
-                bytes: 0,
-                size: Number(resource.size) || 0,
-                source: null,
-                error: "",
-                skipped: false,
-            })),
+            items: [
+                ...missing.map((resource) => ({
+                    id: resource.id,
+                    label: resource.label || resource.id,
+                    type: resource.type || "model",
+                    status: "queued",
+                    bytes: 0,
+                    size: Number(resource.size) || 0,
+                    source: null,
+                    error: "",
+                    skipped: false,
+                })),
+                ...skipped.map(({ resource, reason }) => ({
+                    id: resource.id,
+                    label: resource.label || resource.id,
+                    type: resource.type || "model",
+                    status: "skipped",
+                    bytes: 0,
+                    size: Number(resource.size) || 0,
+                    source: null,
+                    error: "",
+                    hint: reason,
+                    skipped: true,
+                })),
+            ],
             controllers: new Map(),
             error: "",
         };
         updateJob(job);
         if (!missing.length) {
             job.status = "done";
-            job.message = "资源已齐全";
+            job.message = skipped.length ? `已跳过 ${skipped.length} 项：当前显卡不支持 CUDA/TensorRT` : "资源已齐全";
             updateJob(job);
             return jobSnapshot(job);
         }

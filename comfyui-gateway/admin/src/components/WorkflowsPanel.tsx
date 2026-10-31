@@ -273,6 +273,14 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
       key: "status",
       width: "10%",
       render: (_, item) => {
+        const unsupported = item.availability?.problems?.filter((problem) => problem.type === "unsupported") || [];
+        if (unsupported.length) {
+          return (
+            <Tooltip title={unsupported.map((problem) => problem.message).filter(Boolean).join("；")}>
+              <Tag color="orange">硬件不支持</Tag>
+            </Tooltip>
+          );
+        }
         if (item.availability?.available === false) {
           return (
             <Tooltip title={item.availability.problems?.[0]?.message || "工作流不可用"}>
@@ -290,11 +298,20 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
       render: (_, item) => {
         const key = workflowKey(item);
         const resourceRepair = item.repair === "resources" && Boolean(item.id);
+        const hardwareUnsupported = Boolean(item.availability?.problems?.some((problem) => problem.type === "unsupported"));
         const loading = repairing === key;
-        const disabled = Boolean(repairing) && !loading || (resourceRepair && repairJobRunning);
+        const disabled = Boolean(repairing) && !loading || (resourceRepair && (repairJobRunning || hardwareUnsupported));
         return (
           <div className="workflow-actions">
-            <Tooltip title={resourceRepair ? "按资源清单下载该工作流缺失的模型、LoRA、节点和运行库" : "在 ComfyUI 中打开该工作流"}>
+            <Tooltip
+              title={
+                hardwareUnsupported
+                  ? "当前硬件不支持该工作流所需的 CUDA/TensorRT 运行库"
+                  : resourceRepair
+                    ? "按资源清单下载该工作流缺失的模型、LoRA、节点和运行库"
+                    : "在 ComfyUI 中打开该工作流"
+              }
+            >
               <Button
                 className="repair-btn"
                 size="small"
@@ -302,7 +319,7 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
                 disabled={disabled}
                 onClick={() => void (resourceRepair ? repairWithResources(item) : openInComfy(item))}
               >
-                {resourceRepair ? "修复" : "打开"}
+                {hardwareUnsupported ? "不支持" : resourceRepair ? "修复" : "打开"}
               </Button>
             </Tooltip>
           </div>
@@ -356,7 +373,7 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
                 <span>
                   {repairJob.error || repairJob.message || repairJob.status}
                   {repairJob.total ? ` · ${repairJob.completed || 0}/${repairJob.total}` : ""}
-                  {repairJob.status === "done" ? " · 如仍不可用，请重启 ComfyUI" : ""}
+                  {repairJob.status === "done" && !String(repairJob.message || "").includes("跳过") ? " · 如仍不可用，请重启 ComfyUI" : ""}
                 </span>
                 <span className="repair-percent">
                   {repairJob.status === "done" ? "100%" : `总进度 ${Math.max(0, Math.min(100, Number(repairJob.progress) || 0))}%`}
