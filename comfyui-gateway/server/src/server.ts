@@ -455,6 +455,10 @@ export async function createGatewayApp(overrides: any = {}) {
     }
   });
 
+  app.get("/api/resources/jobs/active", (_req, res) => {
+    res.json({ ok: true, job: resources.getActiveJob() });
+  });
+
   app.get("/api/resources/jobs/:id", (req, res) => {
     const job = resources.getJob(req.params.id);
     if (!job) return res.status(404).json({ ok: false, error: { message: "任务不存在" } });

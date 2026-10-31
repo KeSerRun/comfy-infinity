@@ -2719,6 +2719,9 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const job = jobs.get(String(id || ""));
         return job ? jobSnapshot(job) : null;
     }
+    function getActiveJob() {
+        return activeJob && activeJob.status === "running" ? jobSnapshot(activeJob) : null;
+    }
     function cancelJob(id) {
         const job = jobs.get(String(id || ""));
         if (!job)
@@ -2804,6 +2807,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         setResourceReplacement,
         pickResourceReplacement,
         getJob,
+        getActiveJob,
         cancelJob,
         invalidate,
         runtimeProblemsFor,

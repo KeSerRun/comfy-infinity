@@ -472,6 +472,9 @@ export async function createGatewayApp(overrides = {}) {
             res.status(400).json({ ok: false, error: { message: error.message } });
         }
     });
+    app.get("/api/resources/jobs/active", (_req, res) => {
+        res.json({ ok: true, job: resources.getActiveJob() });
+    });
     app.get("/api/resources/jobs/:id", (req, res) => {
         const job = resources.getJob(req.params.id);
         if (!job)

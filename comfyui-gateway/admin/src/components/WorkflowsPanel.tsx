@@ -64,6 +64,22 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
     void loadWorkflows();
   }, [loadWorkflows, refreshToken]);
 
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const job = await api.activeResourceJob();
+        if (!alive || !job || job.status !== "running") return;
+        setRepairJob(job);
+      } catch {
+        /* 恢复进度失败时仍可手动刷新工作流 */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const filteredWorkflows = useMemo(() => {
     const keyword = normalizeSearch(query);
     if (!keyword) return workflows;
@@ -82,6 +98,8 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
   useEffect(() => {
     setPage((current) => Math.min(Math.max(1, current), totalPages));
   }, [totalPages]);
+
+  const repairJobRunning = repairJob?.status === "running";
 
   const setupText = useMemo(() => {
     if (!setup) return "正在检查 ComfyUI…";
@@ -247,14 +265,16 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
       render: (_, item) => {
         const key = workflowKey(item);
         const resourceRepair = item.repair === "resources" && Boolean(item.id);
+        const loading = repairing === key;
+        const disabled = Boolean(repairing) && !loading || (resourceRepair && repairJobRunning);
         return (
           <div className="workflow-actions">
             <Tooltip title={resourceRepair ? "按资源清单下载该工作流缺失的模型、LoRA、节点和运行库" : "在 ComfyUI 中打开该工作流"}>
               <Button
                 className="repair-btn"
                 size="small"
-                loading={repairing === key}
-                disabled={Boolean(repairing) && repairing !== key}
+                loading={loading}
+                disabled={disabled}
                 onClick={() => void (resourceRepair ? repairWithResources(item) : openInComfy(item))}
               >
                 {resourceRepair ? "修复" : "打开"}
