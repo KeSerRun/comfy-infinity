@@ -1,4 +1,5 @@
 import fsp from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const BRIDGE_SOURCE = fileURLToPath(new URL("../../../comfyui-bridge/open-workflow.js", import.meta.url));
@@ -45,11 +46,27 @@ function installRoots(config) {
     }
     return [...roots];
 }
-function frontendCandidates(config) {
+async function desktopInstallRoots() {
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    const installsRoot = path.join(localAppData, "Comfy-Desktop", "ComfyUI-Installs");
+    const roots = [];
+    try {
+        for (const entry of await fsp.readdir(installsRoot, { withFileTypes: true })) {
+            if (entry.isDirectory())
+                roots.push(path.join(installsRoot, entry.name));
+        }
+    }
+    catch {
+        // ComfyUI Desktop is not installed for this user.
+    }
+    roots.push(installsRoot, path.join(localAppData, "Programs", "@comfyorgcomfyui-electron", "resources", "ComfyUI"), path.join(localAppData, "Programs", "ComfyUI"));
+    return roots;
+}
+async function frontendCandidates(config) {
     const candidates = [];
     if (config.comfyFrontendDir)
         candidates.push(path.resolve(config.comfyFrontendDir));
-    for (const root of installRoots(config)) {
+    for (const root of [...installRoots(config), ...(await desktopInstallRoots())]) {
         for (const relative of FRONTEND_CANDIDATES)
             candidates.push(path.join(root, relative));
     }
@@ -68,7 +85,7 @@ async function isFrontendDir(dir) {
     }
 }
 async function findFrontendDir(config) {
-    for (const candidate of frontendCandidates(config)) {
+    for (const candidate of await frontendCandidates(config)) {
         if (await isFrontendDir(candidate))
             return candidate;
     }
