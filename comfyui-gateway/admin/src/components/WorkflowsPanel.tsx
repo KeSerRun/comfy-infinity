@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Input, Table, Tag, Tooltip, type TableColumnsType } from "antd";
 
 import { api } from "../api";
-import type { ResourceJob, SetupStatus, WorkflowSummary } from "../types";
+import type { ResourceJob, ResourceJobItem, SetupStatus, WorkflowSummary } from "../types";
 
 const TYPE_LABEL: Record<string, string> = { image: "生图", video: "视频", audio: "音频", text: "文本", ui: "UI" };
 const TYPE_COLOR: Record<string, string> = { image: "blue", video: "purple", audio: "gold", text: "green", ui: "orange" };
@@ -23,6 +23,28 @@ function normalizeSearch(value: unknown) {
     .toLowerCase()
     .replace(/[\s\-_./\\]+/g, "");
 }
+
+function formatBytes(value: unknown) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = bytes / 1024;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
+}
+
+function itemPercent(item: ResourceJobItem) {
+  if (item.status === "done") return 100;
+  const size = Number(item.size) || 0;
+  const bytes = Number(item.bytes) || 0;
+  return size > 0 ? Math.max(0, Math.min(100, Math.round((bytes / size) * 100))) : 0;
+}
+
+const ACTIVE_ITEM_STATUSES = new Set(["downloading", "verifying", "extracting", "installing", "copying", "baking"]);
 
 function fuzzyMatch(value: unknown, keyword: string) {
   const text = normalizeSearch(value);
@@ -100,6 +122,9 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
   }, [totalPages]);
 
   const repairJobRunning = repairJob?.status === "running";
+  const repairItems = repairJob?.items || [];
+  const activeRepairItems = repairItems.filter((item) => ACTIVE_ITEM_STATUSES.has(item.status));
+  const failedRepairItems = repairItems.filter((item) => item.status === "error");
 
   const setupText = useMemo(() => {
     if (!setup) return "正在检查 ComfyUI…";
@@ -333,11 +358,33 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
                   {repairJob.total ? ` · ${repairJob.completed || 0}/${repairJob.total}` : ""}
                   {repairJob.status === "done" ? " · 如仍不可用，请重启 ComfyUI" : ""}
                 </span>
-                <span className="repair-percent">{repairJob.status === "done" ? 100 : Math.max(0, Math.min(100, Number(repairJob.progress) || 0))}%</span>
+                <span className="repair-percent">
+                  {repairJob.status === "done" ? "100%" : `总进度 ${Math.max(0, Math.min(100, Number(repairJob.progress) || 0))}%`}
+                </span>
               </div>
               <div className="repair-bar">
                 <i style={{ width: `${repairJob.status === "done" ? 100 : Math.max(0, Math.min(100, Number(repairJob.progress) || 0))}%` }} />
               </div>
+              {repairJobRunning && activeRepairItems.length ? (
+                <div className="repair-current">
+                  {activeRepairItems.slice(0, 2).map((item) => (
+                    <span key={item.id}>
+                      {item.label || item.id}：{itemPercent(item)}%
+                      {Number(item.size) > 0 ? ` · ${formatBytes(item.bytes)} / ${formatBytes(item.size)}` : ""}
+                    </span>
+                  ))}
+                  {activeRepairItems.length > 2 ? <span>等 {activeRepairItems.length} 个文件</span> : null}
+                </div>
+              ) : null}
+              {!repairJobRunning && failedRepairItems.length ? (
+                <div className="repair-current bad">
+                  {failedRepairItems.slice(0, 2).map((item) => (
+                    <span key={item.id}>
+                      {item.label || item.id}：{item.error || "安装失败"}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
             {repairJob.status === "running" ? (
               <button className="text-btn" type="button" onClick={() => void cancelRepair()}>

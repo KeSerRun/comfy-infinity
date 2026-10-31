@@ -181,11 +181,19 @@ function pythonFromRunningComfy(config) {
         return cached.value;
     const systemRoot = process.env.SystemRoot || "C:\\Windows";
     const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    // ComfyUI Desktop 的监听进程可能是 standalone-env 基座，真正带 torch 和节点依赖的是
+    // 父进程里的 .venv。沿父进程链收集 Python，优先选 venv，避免把包装进没有 torch 的基座。
     const script = [
         `$conn = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
         "if ($conn) {",
-        "  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $conn.OwningProcess)",
-        "  if ($proc) { $proc.ExecutablePath }",
+        "  $procId = $conn.OwningProcess",
+        "  for ($i = 0; $i -lt 8 -and $procId; $i++) {",
+        "    $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $procId) -ErrorAction SilentlyContinue",
+        "    if (-not $proc) { break }",
+        "    if ($proc.ExecutablePath -match 'python(?:w)?\\.exe$') { $proc.ExecutablePath }",
+        "    if (-not $proc.ParentProcessId -or $proc.ParentProcessId -eq $procId) { break }",
+        "    $procId = $proc.ParentProcessId",
+        "  }",
         "}",
     ].join("\n");
     let found = "";
@@ -197,9 +205,12 @@ function pythonFromRunningComfy(config) {
             maxBuffer: 64 * 1024,
             stdio: ["ignore", "pipe", "ignore"],
         });
-        const first = String(output || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
-        if (first && /python(?:w)?\.exe$/i.test(first) && isFile(first))
-            found = first;
+        const paths = String(output || "")
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => /python(?:w)?\.exe$/i.test(line) && isFile(line));
+        const venv = paths.find((line) => /[\\/](?:\.venv|venv|env)[\\/]/i.test(line));
+        found = venv || paths[0] || "";
     }
     catch {
         found = "";
@@ -2412,28 +2423,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         jobItem.bytes = jobItem.size;
         if (resource.restartAfterInstall) {
             jobItem.restartRequired = true;
-            const control = String(config.launcherControlUrl || "").replace(/\/+$/, "");
-            if (control) {
-                jobItem.status = "installing";
-                jobItem.message = "正在重启 ComfyUI…";
-                updateJob(jobItem.job);
-                try {
-                    const response = await fetch(`${control}/restart-comfy`, {
-                        method: "POST",
-                        signal: AbortSignal.timeout(360000),
-                    });
-                    if (!response.ok)
-                        throw new Error(`HTTP ${response.status}`);
-                    jobItem.restarted = true;
-                }
-                catch (cause) {
-                    jobItem.restartError = truncate(cause?.message || String(cause), 200);
-                    jobItem.hint = `运行库已安装，但自动重启 ComfyUI 失败：${jobItem.restartError}。请退出并重新打开 Comfy Infinity（start-desktop.bat），或把下面这段发给你的 AI Agent：\n请在我的 Windows 机器上重启 ComfyUI（安装目录 ${comfyRoot()}），检查 launcher.log 里的错误；不要重装 SageAttention。`;
-                }
-            }
-            else {
-                jobItem.message = "安装完成，请手动重启 ComfyUI";
-            }
+            jobItem.message = "安装完成，请手动重启 ComfyUI";
         }
         jobItem.status = "done";
     }
@@ -2638,12 +2628,15 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         if (job.status === "running") {
             const failed = job.items.filter((item) => item.status === "error").length;
             const hinted = job.items.some((item) => item.status === "error" && item.hint);
+            const restartRequired = job.items.some((item) => item.restartRequired);
             job.status = failed ? "error" : "done";
             job.message = failed
                 ? hinted
                     ? `${failed} 项失败，其中本机编译失败，请按提示交给 AI Agent 处理`
                     : `${failed} 项失败，请查看日志或用备用源重试`
-                : "资源已就绪";
+                : restartRequired
+                    ? "资源已就绪，请手动重启 ComfyUI"
+                    : "资源已就绪";
             job.error = failed ? "部分资源安装失败" : "";
         }
         updateJob(job);

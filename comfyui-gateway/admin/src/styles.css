@@ -172,6 +172,8 @@
   .repair-bar { height: 5px; margin-top: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
   .repair-bar i { display: block; height: 100%; background: var(--ok); border-radius: inherit; transition: width .25s ease-out; }
   .repair-status.bad .repair-bar i { background: var(--bad); }
+  .repair-current { display: grid; gap: 3px; margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .repair-current.bad { color: var(--bad); }
 
   .section { margin-top: 40px; }
   .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
