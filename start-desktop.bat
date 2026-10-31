@@ -11,3 +11,5 @@ if not exist "node_modules\electron\dist\electron.exe" (
     exit /b 1
   )
 )
+
+start "" "%~dp0launcher\desktop\node_modules\electron\dist\electron.exe" "%~dp0launcher\desktop"
