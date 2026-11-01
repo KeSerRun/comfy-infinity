@@ -86,6 +86,35 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
     void loadWorkflows();
   }, [loadWorkflows, refreshToken]);
 
+  // 在 ComfyUI 标签页保存工作流后，切回管理页时重新读取状态。
+  useEffect(() => {
+    let timer = 0;
+    const refresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        void (async () => {
+          try {
+            setWorkflows(await api.workflows());
+            setLoadError("");
+            onChanged();
+          } catch {
+            /* 后台刷新失败时保留当前列表 */
+          }
+        })();
+      }, 250);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [onChanged]);
+
   useEffect(() => {
     let alive = true;
     void (async () => {

@@ -1,66 +1,86 @@
 {
   "1": {
-    "class_type": "UNETLoader",
     "inputs": {
-      "unet_name": "SinoXvision_Krea2_Aesthetics_fp8_scale.safetensors",
+      "unet_name": "Krea2-Turbo-fp8_v10.safetensors",
       "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
     }
   },
   "2": {
-    "class_type": "CLIPLoader",
     "inputs": {
       "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
       "type": "krea2",
       "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
     }
   },
   "3": {
-    "class_type": "VAELoader",
     "inputs": {
       "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
     }
   },
   "4": {
-    "class_type": "CLIPTextEncode",
     "inputs": {
+      "text": "",
       "clip": [
         "2",
         0
-      ],
-      "text": ""
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
     }
   },
   "5": {
-    "class_type": "CLIPTextEncode",
     "inputs": {
+      "text": "low quality, blurry, deformed, watermark, text, mosaic, low resolution",
       "clip": [
         "2",
         0
-      ],
-      "text": "low quality, blurry, deformed, watermark, text, mosaic, low resolution"
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
     }
   },
   "6": {
-    "class_type": "EmptyLatentImage",
     "inputs": {
       "width": 1280,
       "height": 784,
       "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent图像"
     }
   },
   "7": {
-    "class_type": "KSamplerAdvanced",
     "inputs": {
-      "model": [
-        "1",
-        0
-      ],
       "add_noise": "enable",
       "noise_seed": 835582592782321,
       "steps": 7,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 7,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "1",
+        0
+      ],
       "positive": [
         "4",
         0
@@ -72,36 +92,42 @@
       "latent_image": [
         "6",
         0
-      ],
-      "start_at_step": 0,
-      "end_at_step": 7,
-      "return_with_leftover_noise": "enable"
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "K采样器（高级）"
     }
   },
   "8": {
-    "class_type": "LatentUpscaleBy",
     "inputs": {
+      "upscale_method": "bislerp",
+      "scale_by": 1.5,
       "samples": [
         "7",
         0
-      ],
-      "upscale_method": "bislerp",
-      "scale_by": 1.5
+      ]
+    },
+    "class_type": "LatentUpscaleBy",
+    "_meta": {
+      "title": "缩放Latent（比例）"
     }
   },
   "9": {
-    "class_type": "KSamplerAdvanced",
     "inputs": {
-      "model": [
-        "1",
-        0
-      ],
       "add_noise": "enable",
       "noise_seed": 680614728720534,
       "steps": 10,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "simple",
+      "start_at_step": 4,
+      "end_at_step": 999,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "1",
+        0
+      ],
       "positive": [
         "4",
         0
@@ -113,14 +139,14 @@
       "latent_image": [
         "8",
         0
-      ],
-      "start_at_step": 4,
-      "end_at_step": 999,
-      "return_with_leftover_noise": "disable"
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "K采样器（高级）"
     }
   },
   "10": {
-    "class_type": "VAEDecode",
     "inputs": {
       "samples": [
         "9",
@@ -130,16 +156,23 @@
         "3",
         0
       ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
     }
   },
   "11": {
-    "class_type": "SaveImage",
     "inputs": {
+      "filename_prefix": "krea2",
       "images": [
         "10",
         0
-      ],
-      "filename_prefix": "krea2"
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
     }
   }
 }

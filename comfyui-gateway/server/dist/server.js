@@ -872,6 +872,33 @@ export async function createGatewayApp(overrides = {}) {
             bridgeReason: bridge.installed ? undefined : bridge.reason,
         });
     });
+    app.post("/api/workflow-files/save", async (req, res) => {
+        const { file } = resolveWorkflowFile(req.body?.file, req.body?.source);
+        const workflow = req.body?.workflow;
+        const format = isApiWorkflow(workflow) ? "api" : isUiWorkflow(workflow) ? "ui" : "";
+        if (!format)
+            throw new HttpError("不是有效的 ComfyUI UI 或 API 工作流", { status: 422, code: "invalid_workflow" });
+        const text = `${JSON.stringify(workflow, null, 2)}\n`;
+        if (Buffer.byteLength(text) > config.maxWorkflowBytes)
+            throw new HttpError("工作流文件过大", { status: 413, code: "workflow_too_large" });
+        const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+        try {
+            fs.writeFileSync(temp, text, "utf8");
+            fs.renameSync(temp, file);
+        }
+        catch (error) {
+            try {
+                fs.rmSync(temp, { force: true });
+            }
+            catch {
+                /* 清理失败不覆盖原始错误 */
+            }
+            throw new HttpError(`保存工作流失败：${error.message}`, { status: 500, code: "workflow_save_failed" });
+        }
+        void registry.reloadIfChanged?.();
+        void setup.scan().catch((error) => logger.warn(`保存工作流后扫描失败：${error.message}`));
+        res.json({ ok: true, file, name: path.basename(file, ".json"), format });
+    });
     app.get("/api/workflows", async (_req, res) => {
         await registry.reloadIfChanged();
         const builtin = registry.list();

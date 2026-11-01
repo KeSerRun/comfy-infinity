@@ -1,64 +1,70 @@
 {
   "1": {
-    "class_type": "UNETLoader",
     "inputs": {
-      "unet_name": "qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
       "weight_dtype": "default"
     },
+    "class_type": "UNETLoader",
     "_meta": {
       "title": "Qwen 2.1 Turbo"
     }
   },
   "2": {
-    "class_type": "CLIPLoader",
     "inputs": {
       "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
       "type": "qwen_image",
       "device": "default"
     },
+    "class_type": "CLIPLoader",
     "_meta": {
       "title": "Qwen3VL 8B"
     }
   },
   "3": {
-    "class_type": "VAELoader",
     "inputs": {
       "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
     },
+    "class_type": "VAELoader",
     "_meta": {
       "title": "Qwen 2.1 VAE"
     }
   },
   "4": {
-    "class_type": "QwenImage21Cache",
     "inputs": {
+      "device": "auto",
+      "dtype": "default",
       "model": [
         "1",
         0
-      ],
-      "device": "auto",
-      "dtype": "default"
+      ]
+    },
+    "class_type": "QwenImage21Cache",
+    "_meta": {
+      "title": "Qwen Image 2.1 缓存"
     }
   },
   "5": {
-    "class_type": "TextEncodeQwenImage21",
     "inputs": {
+      "prompt": "",
+      "negative_prompt": "artifacts, low quality, blurry, deformed, watermark",
+      "resolution": 1024,
       "clip": [
         "2",
         0
       ],
-      "prompt": "",
-      "negative_prompt": "artifacts, low quality, blurry, deformed, watermark",
       "vae": [
         "3",
         0
-      ],
-      "resolution": 1024
+      ]
+    },
+    "class_type": "TextEncodeQwenImage21",
+    "_meta": {
+      "title": "文本编码 Qwen Image 2.1"
     }
   },
   "6": {
-    "class_type": "CFGGuider",
     "inputs": {
+      "cfg": 1,
       "model": [
         "4",
         0
@@ -70,30 +76,41 @@
       "negative": [
         "5",
         1
-      ],
-      "cfg": 1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG引导器"
     }
   },
   "7": {
-    "class_type": "RandomNoise",
     "inputs": {
       "noise_seed": 123456789
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "随机噪波"
     }
   },
   "8": {
-    "class_type": "KSamplerSelect",
     "inputs": {
       "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
     }
   },
   "9": {
-    "class_type": "ManualSigmas",
     "inputs": {
       "sigmas": "1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "自定义Sigmas"
     }
   },
   "10": {
-    "class_type": "SamplerCustomAdvanced",
     "inputs": {
       "noise": [
         "7",
@@ -115,10 +132,13 @@
         "5",
         2
       ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "自定义采样器（高级）"
     }
   },
   "11": {
-    "class_type": "VAEDecode",
     "inputs": {
       "samples": [
         "10",
@@ -128,32 +148,38 @@
         "3",
         0
       ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
     }
   },
   "12": {
-    "class_type": "SaveImage",
     "inputs": {
+      "filename_prefix": "Qwen21Edit",
       "images": [
         "11",
         0
-      ],
-      "filename_prefix": "Qwen21Edit"
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
     }
   },
   "13": {
-    "class_type": "EmptyImage",
     "inputs": {
       "width": 1024,
       "height": 1024,
       "batch_size": 1,
       "color": 0
     },
+    "class_type": "EmptyImage",
     "_meta": {
       "title": "Output canvas"
     }
   },
   "14": {
-    "class_type": "VAEEncode",
     "inputs": {
       "pixels": [
         "13",
@@ -164,6 +190,7 @@
         0
       ]
     },
+    "class_type": "VAEEncode",
     "_meta": {
       "title": "Output latent"
     }
