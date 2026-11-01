@@ -517,7 +517,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return false;
     }
 
-    function validateWorkflow(workflow, classes, loaders, entry) {
+    function validateWorkflow(workflow, classes, loaders, entry, notes: any = null) {
         const problems = [];
         for (const [nodeId, node] of Object.entries((workflow || {}) as Record<string, any>)) {
             const classType = node?.class_type;
@@ -533,7 +533,10 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 const overrideLower = normalizeAliasValue(override).toLowerCase();
                 const overrideInstalled = Boolean(override) && [...loader.options].some((option) => normalizeAliasValue(option).toLowerCase() === overrideLower);
                 if (override && classType === "UNETLoader" && loader.input === "unet_name" && overrideInstalled) continue;
-                if (hasBaseModelAlternative(entry, classType, loader.input, loader.options, value)) continue;
+                if (hasBaseModelAlternative(entry, classType, loader.input, loader.options, value)) {
+                    if (notes) notes.baseModelFallback = true;
+                    continue;
+                }
                 if (modelAliasFor(classType, loader.input, value)) continue;
                 const pending = pendingModelFile(classType, loader.input, value);
                 if (pending) {
@@ -604,11 +607,12 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 const missingRestart = new Set();
                 availability.clear();
                 for (const entry of allEntries) {
-                    const baseProblems = entry.workflow ? validateWorkflow(entry.workflow, classes, loaders, entry) : [];
+                    const validationNotes: any = {};
+                    const baseProblems = entry.workflow ? validateWorkflow(entry.workflow, classes, loaders, entry, validationNotes) : [];
                     const variantStatus: any = {};
                     for (const [mode, variant] of Object.entries((entry.variants || {}) as Record<string, any>)) {
                         if (!variant?.workflow) continue;
-                        variantStatus[mode] = validateWorkflow(variant.workflow, classes, loaders, entry);
+                        variantStatus[mode] = validateWorkflow(variant.workflow, classes, loaders, entry, validationNotes);
                     }
                     const variantProblems = Object.values((variantStatus) as Record<string, any>).flat();
                     const runtimeProblems = typeof runtimeProblemProvider === "function" ? runtimeProblemProvider(entry.id) || [] : [];
@@ -625,7 +629,8 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                     const anyVariantAvailable = Object.values((variantStatus) as Record<string, any>).some((list) => list.length === 0);
                     const available = runtimeProblems.length === 0 && (baseAvailable || anyVariantAvailable);
                     const variants = Object.fromEntries(Object.entries((variantStatus) as Record<string, any>).map(([mode, list]) => [mode, { available: list.length === 0, problems: list }]));
-                    availability.set(entry.id, { available, problems: unique, variants });
+                    const baseModelFallback = validationNotes.baseModelFallback === true;
+                    availability.set(entry.id, { available, problems: unique, variants, baseModelFallback });
                     if (entry.hidden) continue;
                     for (const problem of unique) {
                         if (problem.type === "model") missingModels.add(problem.message);
@@ -633,7 +638,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                         if (problem.type === "runtime") missingRuntime.add(problem.message);
                         if (problem.type === "restart") missingRestart.add(problem.message);
                     }
-                    workflows.push({ id: entry.id, name: entry.name, type: entry.type, available, problems: unique, variants });
+                    workflows.push({ id: entry.id, name: entry.name, type: entry.type, available, problems: unique, variants, baseModelFallback });
                 }
                 state.workflows = workflows;
                 state.counts = {

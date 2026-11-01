@@ -273,7 +273,11 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
       key: "status",
       width: "10%",
       render: (_, item) => {
+        const key = workflowKey(item);
         const unsupported = item.availability?.problems?.filter((problem) => problem.type === "unsupported") || [];
+        const unavailable = item.availability?.available === false;
+        const canResourceRepair = unavailable && item.repair === "resources" && Boolean(item.id) && !unsupported.length;
+        const problemText = (item.availability?.problems || []).map((problem) => problem.message).filter(Boolean).join("；");
         if (unsupported.length) {
           return (
             <Tooltip title={unsupported.map((problem) => problem.message).filter(Boolean).join("；")}>
@@ -281,10 +285,33 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
             </Tooltip>
           );
         }
-        if (item.availability?.available === false) {
+        if (canResourceRepair) {
           return (
-            <Tooltip title={item.availability.problems?.[0]?.message || "工作流不可用"}>
+            <Tooltip title={problemText || "下载该工作流缺失的模型、LoRA、节点和运行库"}>
+              <Button
+                danger
+                className="repair-btn"
+                size="small"
+                loading={repairing === key}
+                disabled={repairJobRunning || (Boolean(repairing) && repairing !== key)}
+                onClick={() => void repairWithResources(item)}
+              >
+                修复
+              </Button>
+            </Tooltip>
+          );
+        }
+        if (unavailable) {
+          return (
+            <Tooltip title={problemText || "工作流不可用"}>
               <Tag color="red">不可用</Tag>
+            </Tooltip>
+          );
+        }
+        if (item.availability?.baseModelFallback) {
+          return (
+            <Tooltip title="默认底模未安装，但可用其他匹配的底模变体运行；请在画布中切换底模">
+              <Tag color="gold">可用·切底模</Tag>
             </Tooltip>
           );
         }
@@ -297,29 +324,19 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
       width: "12%",
       render: (_, item) => {
         const key = workflowKey(item);
-        const resourceRepair = item.repair === "resources" && Boolean(item.id);
-        const hardwareUnsupported = Boolean(item.availability?.problems?.some((problem) => problem.type === "unsupported"));
         const loading = repairing === key;
-        const disabled = Boolean(repairing) && !loading || (resourceRepair && (repairJobRunning || hardwareUnsupported));
+        const disabled = Boolean(repairing) && !loading || !item.file;
         return (
           <div className="workflow-actions">
-            <Tooltip
-              title={
-                hardwareUnsupported
-                  ? "当前硬件不支持该工作流所需的 CUDA/TensorRT 运行库"
-                  : resourceRepair
-                    ? "按资源清单下载该工作流缺失的模型、LoRA、节点和运行库"
-                    : "在 ComfyUI 中打开该工作流"
-              }
-            >
+            <Tooltip title={item.file ? "在 ComfyUI 中打开该工作流" : "缺少工作流文件路径，无法打开"}>
               <Button
                 className="repair-btn"
                 size="small"
                 loading={loading}
                 disabled={disabled}
-                onClick={() => void (resourceRepair ? repairWithResources(item) : openInComfy(item))}
+                onClick={() => void openInComfy(item)}
               >
-                {hardwareUnsupported ? "不支持" : resourceRepair ? "修复" : "打开"}
+                打开
               </Button>
             </Tooltip>
           </div>

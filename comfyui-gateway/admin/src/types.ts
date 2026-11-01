@@ -24,7 +24,7 @@ export type WorkflowSummary = {
   repair?: "resources" | "comfyui";
   bindings?: Record<string, unknown>;
   variantModes?: string[];
-  availability?: { available?: boolean; problems?: Array<{ type?: string; message?: string }> };
+  availability?: { available?: boolean; baseModelFallback?: boolean; problems?: Array<{ type?: string; message?: string }> };
 };
 
 export type ResourceJobItem = {
