@@ -42,3 +42,4 @@ comfyui-gateway/resources/vae_approx/*.safetensors
 .commandcode/
 .update/
 .update-backup/
+/comfyui-gateway/workflows/

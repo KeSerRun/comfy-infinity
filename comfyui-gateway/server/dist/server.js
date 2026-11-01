@@ -288,8 +288,9 @@ export async function createGatewayApp(overrides = {}) {
     const resources = createResourceManager({ config, setup, registry, logger, workflowVisibility, mainModels });
     await resources.init();
     setup.setRuntimeProblemProvider?.((workflowId) => resources.runtimeProblemsFor(workflowId));
-    // 随包节点由启动器首次启动复制；直接运行网关时这里补一次（幂等）
+    // 随包节点/工作流由启动器首次启动复制；直接运行网关时这里补一次（幂等）
     void ensureBundledNodes();
+    void ensureBundledWorkflows();
     async function ensureBundledNodes() {
         if (process.env.DISABLE_NODE_BOOTSTRAP === "1")
             return;
@@ -312,6 +313,27 @@ export async function createGatewayApp(overrides = {}) {
         }
         catch (error) {
             logger.warn(`随包节点检查失败：${error.message}`);
+        }
+    }
+    async function ensureBundledWorkflows() {
+        if (process.env.DISABLE_WORKFLOW_BOOTSTRAP === "1")
+            return;
+        try {
+            const packageRoot = path.join(config.rootDir, "..");
+            const modulePath = path.join(packageRoot, "launcher", "bootstrap-workflows.mjs");
+            if (!fs.existsSync(modulePath))
+                return;
+            const { installBundledWorkflows } = await import(pathToFileURL(modulePath).href);
+            const installed = await installBundledWorkflows({
+                root: packageRoot,
+                workflowDir: config.workflowDir,
+                log: (message, level) => (level === "WARN" ? logger.warn(message) : logger.info(message)),
+            });
+            if (installed.length)
+                logger.info(`已从随包工作流补齐 ${installed.length} 个文件，已有用户工作流保持不变`);
+        }
+        catch (error) {
+            logger.warn(`随包工作流检查失败：${error.message}`);
         }
     }
     let lastOOM = null;

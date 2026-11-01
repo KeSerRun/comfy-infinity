@@ -25,6 +25,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { installBundledNodes } from "./bootstrap-nodes.mjs";
+import { installBundledWorkflows } from "./bootstrap-workflows.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -1844,6 +1845,16 @@ async function main() {
       `gatewayDir=${cfg.gatewayDir} canvasDist=${cfg.canvasDist}`
   );
   if (DRY_RUN) log("dry-run：只做检测与打印，不启动任何进程，不监听端口");
+  if (!DRY_RUN) {
+    const installedWorkflows = await installBundledWorkflows({
+      root: ROOT,
+      workflowDir: path.join(cfg.gatewayDir, "workflows"),
+      log,
+    });
+    if (installedWorkflows.length) {
+      log(`已从随包工作流补齐 ${installedWorkflows.length} 个文件；已有的用户工作流保持不变`);
+    }
+  }
   cfg.launcherControlUrl = "";
   if (!DRY_RUN) {
     const controlReady = await startControlServer(cfg);
