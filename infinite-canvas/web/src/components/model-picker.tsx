@@ -224,7 +224,11 @@ function LevelSelect({
             open={open}
             value={value}
             onOpenChange={(nextOpen) => {
-                if (nextOpen && !options.length && onMissingConfig) onMissingConfig();
+                if (nextOpen && !options.length && onMissingConfig) {
+                    onMissingConfig();
+                    setOpen(false);
+                    return;
+                }
                 if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
                 setOpen(nextOpen);
             }}

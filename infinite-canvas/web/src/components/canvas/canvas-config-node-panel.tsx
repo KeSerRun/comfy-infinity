@@ -1,11 +1,11 @@
 import type { CSSProperties } from "react";
 import { Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Settings2, Square, Video } from "lucide-react";
-import { Button, Segmented } from "antd";
+import { App, Button, Segmented } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { BaseModelPicker, WorkflowModelPicker } from "@/components/model-picker";
 import { LOCAL_ONLY } from "@/constant/app-mode";
-import { defaultConfig, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { defaultConfig, resolveModelForCapability, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import { videoModelForWorkflow, videoModelModePatch, videoWorkflowId, isNoVdnWorkflowId } from "@/lib/canvas/video-model-mode";
@@ -30,8 +30,8 @@ type CanvasConfigNodePanelProps = {
 
 export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigChange, onGenerate, onStop, onComposerToggle, onOpenMaskEditor, onOpenOutpaintEditor, onOpenMossLayoutEditor }: CanvasConfigNodePanelProps) {
     const { t } = useTranslation();
+    const { message } = App.useApp();
     const globalConfig = useEffectiveConfig();
-    const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = useCanvasTheme();
     const mode = node.metadata?.generationMode || "image";
     const config = buildNodeConfig(globalConfig, node, mode);
@@ -116,7 +116,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
 
             <div className="mb-2 grid min-w-0 cursor-default grid-cols-[minmax(0,1fr)_148px] items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
                 <div className="flex min-w-0 flex-col gap-1">
-                    <WorkflowModelPicker className="canvas-compact-control h-10" config={config} value={config.model} onChange={(model) => onConfigChange(node.id, mode === "video" ? videoModelModePatch(config, model) : { model })} capability={mode} onMissingConfig={() => openConfigDialog(true)} fullWidth />
+                    <WorkflowModelPicker className="canvas-compact-control h-10" config={config} value={config.model} onChange={(model) => onConfigChange(node.id, mode === "video" ? videoModelModePatch(config, model) : { model })} capability={mode} onMissingConfig={() => message.warning(t("canvas.workflowEmpty"))} fullWidth />
                     <BaseModelPicker className="canvas-compact-control h-10" config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} fullWidth />
                 </div>
                 {mode === "video" ? (

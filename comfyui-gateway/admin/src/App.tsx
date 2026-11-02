@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ConfigProvider, theme as antdTheme } from "antd";
 
 import { api } from "./api";
@@ -15,6 +15,7 @@ const TAB_LABELS: Record<TabKey, string> = {
 };
 const TAB_KEY = "comfy-infinity-gateway-tab-v2";
 const THEME_KEY = "comfy-infinity-gateway-theme";
+const FONT_SANS = '"Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif';
 
 function isTab(value: string | null | undefined): value is TabKey {
   return Boolean(value) && (TAB_NAMES as string[]).includes(value as string);
@@ -85,6 +86,15 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    const onTheme = (event: Event) => {
+      const next = (event as CustomEvent<string>).detail;
+      if (next === "light" || next === "dark") setTheme(next);
+    };
+    window.addEventListener("comfy-theme", onTheme);
+    return () => window.removeEventListener("comfy-theme", onTheme);
+  }, []);
+
+  useEffect(() => {
     void loadHealth();
     const timer = window.setInterval(() => void loadHealth(), 15000);
     return () => window.clearInterval(timer);
@@ -133,23 +143,19 @@ export default function App() {
     if (!tasksVisible && tab === "tasks") selectTab("directories");
   }, [tasksVisible, tab, selectTab]);
 
-  const consoleUrl = useMemo(
-    () => (health?.consoleUrl ? `${health.consoleUrl.replace(/\/+$/, "")}/` : ""),
-    [health?.consoleUrl],
-  );
   const connected = Boolean(health?.comfy?.reachable);
 
   return (
     <ConfigProvider
-      theme={{ algorithm: theme === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm }}
+      theme={{
+        algorithm: theme === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+        token: { fontFamily: FONT_SANS },
+      }}
       button={{ autoInsertSpace: false }}
     >
       <>
         <header className="top">
-          <div className="brand">
-            <img className="mark" src="/logo.png" alt="" />
-            <span className="brand-name">ComfyUI Gateway</span>
-          </div>
+          <div aria-hidden="true" />
           <nav className="tabs" role="tablist" aria-label="管理页面">
             {TAB_NAMES.map((name) => (
               <button
@@ -170,22 +176,6 @@ export default function App() {
               <span id="health-dot" className={`dot${connected ? " ok" : ""}`} />
               <span>{health ? (connected ? "已连接" : "未连接") : "离线"}</span>
             </span>
-            {consoleUrl ? <a href={consoleUrl}>返回控制台</a> : null}
-            <button
-              type="button"
-              className="theme-toggle"
-              title="切换深浅色"
-              aria-label={theme === "light" ? "切换到深色" : "切换到浅色"}
-              onClick={() => setTheme((value) => (value === "light" ? "dark" : "light"))}
-            >
-              <svg className="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-              </svg>
-              <svg className="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
-              </svg>
-            </button>
           </div>
         </header>
 

@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comfy Infinity</title>
+  <script>
+    document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg:#0b0d12; --bar:#11151d; --line:#252b38; --fg:#e8ecf3;
+      --muted:#8993a6; --hover:#1a202b; --active:#2b3342;
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg:#f6f4f0; --bar:#fffdfa; --line:#e2dcd2; --fg:#211d19;
+      --muted:#5d564d; --hover:#f4f1ea; --active:#ebe6dd;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--fg); font: 13px/1.4 "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; }
+    header {
+      display: flex; align-items: center; gap: 18px; height: 46px; padding: 0 150px 0 16px;
+      background: var(--bar); border-bottom: 1px solid var(--line); flex: none;
+      -webkit-app-region: drag; user-select: none;
+    }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: .2px; white-space: nowrap; }
+    .brand-logo { width: 26px; height: 26px; border-radius: 7px; object-fit: cover; flex: none; -webkit-user-drag: none; }
+    nav { display: flex; gap: 4px; -webkit-app-region: no-drag; }
+    nav button { border: 0; border-radius: 7px; padding: 7px 14px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; -webkit-app-region: no-drag; }
+    nav button:hover { color: var(--fg); background: var(--hover); }
+    nav button.active { color: var(--fg); background: var(--active); }
+    #themeToggle {
+      margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; padding: 0; flex: none;
+      border: 1px solid var(--line); border-radius: 7px;
+      background: transparent; color: var(--muted); cursor: pointer; -webkit-app-region: no-drag;
+    }
+    #themeToggle:hover { color: var(--fg); border-color: var(--muted); }
+    #themeToggle svg { width: 15px; height: 15px; }
+    #themeToggle .icon-moon { display: none; }
+    :root[data-theme="light"] #themeToggle .icon-sun { display: none; }
+    :root[data-theme="light"] #themeToggle .icon-moon { display: inline-block; }
+    main { display: flex; flex: 1; min-height: 0; }
+    .view { display: none; position: relative; flex: 1; min-width: 0; min-height: 0; }
+    .view.active { display: flex; }
+    webview { width: 100%; height: 100%; border: 0; background: var(--bg); }
+    .offline {
+      position: absolute; inset: 0; z-index: 2;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg); color: var(--fg);
+    }
+    .offline[hidden] { display: none; }
+    .offline-card { max-width: 420px; padding: 28px; text-align: center; }
+    .offline-card h2 { margin: 0 0 8px; font-size: 18px; font-weight: 500; }
+    .offline-card p { margin: 0 0 20px; color: var(--muted); line-height: 1.7; }
+    .offline-actions { display: flex; justify-content: center; gap: 8px; }
+    .offline-actions button {
+      border: 1px solid var(--line); border-radius: 7px; padding: 7px 14px;
+      background: var(--hover); color: var(--fg); cursor: pointer; font: inherit;
+    }
+    .offline-actions button:hover { border-color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><img class="brand-logo" src="app-icon.png" alt="" draggable="false" />Comfy Infinity</div>
+    <nav id="tabs">
+      <button type="button" data-tab="console">控制台</button>
+      <button type="button" data-tab="canvas">画布</button>
+      <button type="button" data-tab="admin">模型配置</button>
+    </nav>
+    <button type="button" id="themeToggle" title="切换深浅色" aria-label="切换深浅色">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>
+    </button>
+  </header>
+  <main>
+    <section class="view" data-view="console">
+      <webview id="view-console" data-tab="console"></webview>
+      <div class="offline" data-offline="console" hidden>
+        <div class="offline-card">
+          <h2>控制台服务未启动</h2>
+          <p>启动器控制服务还没有就绪，请稍后重试。</p>
+          <div class="offline-actions"><button type="button" data-retry="console">重新连接</button></div>
+        </div>
+      </div>
+    </section>
+    <section class="view" data-view="canvas">
+      <webview id="view-canvas" data-tab="canvas"></webview>
+      <div class="offline" data-offline="canvas" hidden>
+        <div class="offline-card">
+          <h2>画布服务未启动</h2>
+          <p>画布还没有就绪，请先在控制台启动画布服务，再重新连接。</p>
+          <div class="offline-actions">
+            <button type="button" data-retry="canvas">重新连接</button>
+            <button type="button" data-console>打开控制台</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="view" data-view="admin">
+      <webview id="view-admin" data-tab="admin"></webview>
+      <div class="offline" data-offline="admin" hidden>
+        <div class="offline-card">
+          <h2>模型配置服务未启动</h2>
+          <p>本地模型配置还没有就绪，请先在控制台启动模型配置，再重新连接。</p>
+          <div class="offline-actions">
+            <button type="button" data-retry="admin">重新连接</button>
+            <button type="button" data-console>打开控制台</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const urls = {
+      console: params.get("console") || "",
+      canvas: params.get("canvas") || "",
+      admin: params.get("admin") || ""
+    };
+    const views = {
+      console: document.getElementById("view-console"),
+      canvas: document.getElementById("view-canvas"),
+      admin: document.getElementById("view-admin")
+    };
+    const sections = {
+      console: document.querySelector('[data-view="console"]'),
+      canvas: document.querySelector('[data-view="canvas"]'),
+      admin: document.querySelector('[data-view="admin"]')
+    };
+    const offlineViews = {
+      console: document.querySelector('[data-offline="console"]'),
+      canvas: document.querySelector('[data-offline="canvas"]'),
+      admin: document.querySelector('[data-offline="admin"]')
+    };
+    let current = "";
+    let themeTimer = 0;
+    let appliedTheme = "";
+    let bootstrappedTheme = false;
+
+    function systemTheme() {
+      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    }
+
+    function applyTheme(theme) {
+      const value = theme === "light" ? "light" : "dark";
+      if (value === appliedTheme) return;
+      appliedTheme = value;
+      document.documentElement.dataset.theme = value;
+      window.comfyWindow?.setTheme(value);
+    }
+
+    function pageThemeScript(theme) {
+      return `(() => {
+        const theme = ${JSON.stringify(theme)};
+        try {
+          const root = document.documentElement;
+          root.dataset.theme = theme;
+          root.style.colorScheme = theme;
+          root.classList.toggle("dark", theme === "dark");
+          try {
+            localStorage.setItem("comfy-infinity-console-theme", theme);
+            localStorage.setItem("comfy-infinity-gateway-theme", theme);
+            const raw = localStorage.getItem("infinite-canvas:theme_store");
+            const saved = raw ? JSON.parse(raw) : {};
+            saved.state = { ...(saved.state || {}), theme };
+            if (!saved.version) saved.version = 0;
+            localStorage.setItem("infinite-canvas:theme_store", JSON.stringify(saved));
+          } catch {}
+          window.dispatchEvent(new CustomEvent("comfy-theme", { detail: theme }));
+        } catch {}
+      })()`;
+    }
+
+    function applyThemeToView(name, theme) {
+      const view = views[name];
+      if (!view || !theme) return;
+      let result;
+      try {
+        result = view.executeJavaScript(pageThemeScript(theme));
+      } catch {
+        return;
+      }
+      Promise.resolve(result).catch(() => {});
+    }
+
+    function broadcastTheme(theme) {
+      for (const name of Object.keys(views)) applyThemeToView(name, theme);
+    }
+
+    function syncTheme(name = current) {
+      const view = views[name];
+      if (!view) return;
+      // 控制台/管理页用 data-theme，画布把主题存在 localStorage；统一读取当前页面的实际主题。
+      const script = `(() => {
+        try {
+          const root = document.documentElement;
+          if (root.dataset.theme === "light" || root.dataset.theme === "dark") return root.dataset.theme;
+          const raw = localStorage.getItem("infinite-canvas:theme_store");
+          if (raw) {
+            const saved = JSON.parse(raw);
+            const theme = saved && saved.state && saved.state.theme;
+            if (theme === "light" || theme === "dark") return theme;
+          }
+          if (root.classList.contains("dark")) return "dark";
+          return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        } catch {
+          return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        }
+      })()`;
+      let result;
+      try {
+        result = view.executeJavaScript(script);
+      } catch {
+        return;
+      }
+      Promise.resolve(result)
+        .then((theme) => {
+          if (name !== current) return;
+          const value = theme === "light" ? "light" : "dark";
+          const changed = value !== appliedTheme;
+          applyTheme(value);
+          if (!bootstrappedTheme || changed) {
+            bootstrappedTheme = true;
+            broadcastTheme(value);
+          }
+        })
+        .catch(() => {});
+    }
+
+    function startThemeSync() {
+      if (themeTimer) window.clearInterval(themeTimer);
+      themeTimer = window.setInterval(() => syncTheme(), 750);
+    }
+
+    function tabForUrl(raw) {
+      let target;
+      try { target = new URL(raw); } catch { return ""; }
+      for (const [name, value] of Object.entries(urls)) {
+        if (!value) continue;
+        try {
+          const base = new URL(value);
+          if (target.origin !== base.origin) continue;
+          if (name === "console") return name;
+          const prefix = base.pathname.replace(/\/+$/, "");
+          if (target.pathname === prefix || target.pathname.startsWith(`${prefix}/`)) return name;
+        } catch { /* ignore */ }
+      }
+      return "";
+    }
+
+    function setOffline(name, visible) {
+      const view = offlineViews[name];
+      if (view) view.hidden = !visible;
+    }
+
+    function retryView(name) {
+      const view = views[name];
+      const target = urls[name];
+      if (!view || !target) return;
+      setOffline(name, false);
+      if (view.getAttribute("src")) view.reload();
+      else view.setAttribute("src", target);
+    }
+
+    function show(name, url = "", reload = false) {
+      if (!views[name]) return;
+      if (url) urls[name] = url;
+      current = name;
+      document.querySelectorAll("#tabs button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tab === name);
+      });
+      for (const [key, view] of Object.entries(views)) {
+        sections[key]?.classList.toggle("active", key === name);
+        if (key !== name) continue;
+        const target = urls[key];
+        if (target && reload && view.getAttribute("src") === target) view.reload();
+        else if (target && (reload || !view.getAttribute("src"))) view.setAttribute("src", target);
+        if (reload) setOffline(name, false);
+      }
+      if (!appliedTheme) applyTheme(systemTheme());
+      syncTheme(name);
+    }
+
+    function routeWithinTabs(raw) {
+      const name = tabForUrl(raw);
+      if (name) { show(name); return true; }
+      return false;
+    }
+
+    function openFromPage(raw) {
+      if (typeof raw !== "string") return;
+      if (routeWithinTabs(raw)) return;
+      if (/^https?:\/\//i.test(raw)) window.comfyWindow?.openExternal(raw);
+    }
+
+    document.querySelectorAll("#tabs button").forEach((button) => {
+      button.addEventListener("click", () => show(button.dataset.tab));
+    });
+    document.getElementById("themeToggle").addEventListener("click", () => {
+      const next = appliedTheme === "light" ? "dark" : "light";
+      bootstrappedTheme = true;
+      applyTheme(next);
+      broadcastTheme(next);
+    });
+    document.querySelectorAll("[data-retry]").forEach((button) => {
+      button.addEventListener("click", () => retryView(button.dataset.retry));
+    });
+    document.querySelectorAll("[data-console]").forEach((button) => {
+      button.addEventListener("click", () => show("console"));
+    });
+
+    for (const [name, view] of Object.entries(views)) {
+      view.addEventListener("ipc-message", (event) => {
+        if (event.channel === "open-url") openFromPage(event.args[0]);
+      });
+      for (const eventName of ["will-navigate", "new-window"]) {
+        view.addEventListener(eventName, (event) => {
+          const url = event.url;
+          if (!url) return;
+          if (routeWithinTabs(url)) {
+            event.preventDefault();
+            return;
+          }
+          if (/^https?:\/\//i.test(url)) {
+            event.preventDefault();
+            window.open(url, "_blank");
+          }
+        });
+      }
+      view.addEventListener("did-fail-load", (event) => {
+        if (event.isMainFrame === false || event.errorCode === -3) return;
+        setOffline(name, true);
+      });
+      view.addEventListener("did-start-loading", () => setOffline(name, false));
+      view.addEventListener("dom-ready", () => {
+        if (appliedTheme) applyThemeToView(name, appliedTheme);
+      });
+    }
+
+    window.comfyShell = {
+      show,
+      current: () => current
+    };
+    startThemeSync();
+    show("console");
+  </script>
+</body>
+</html>

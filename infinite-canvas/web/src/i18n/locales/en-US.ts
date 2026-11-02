@@ -3,7 +3,6 @@ export default {
         title: "Comfy Infinity",
         description: "Local AI creation workbench",
     },
-    theme: { toggle: "Toggle theme" },
     gateway: {
         reconnecting: "Local gateway disconnected. Reconnecting…",
     },
@@ -136,11 +135,10 @@ export default {
         retrySuccess: "Retry succeeded",
     },
     canvas: {
-        backToCanvas: "My Canvases",
-        backToCanvasHint: "Open my canvases",
         defaultTitle: "Infinite Canvas {{count}}",
         library: "Canvas library",
         title: "Infinite Canvas",
+        workflowEmpty: "No workflows available. Configure them on the Model Configuration page.",
         fishWhip: { bubble: "I will guard your process." },
         imported: "Imported {{count}} canvases",
         importFailed: "Import failed. Select a valid canvas package.",
@@ -157,7 +155,6 @@ export default {
         expandPanel: "Expand panel",
         home: "Home",
         docs: "Documentation",
-        projects: "My Canvases",
         deleteCurrent: "Delete current canvas",
         importAsset: "Import asset",
         exportCurrent: "Export current canvas",
@@ -193,7 +190,7 @@ export default {
         },
         toolbar: {
             select: "Select", pan: "Move", focus: "Center focus", text: "Text", image: "Image", video: "Video", audio: "Audio", config: "Generation config", freeCard: "Free card", group: "Group", extensions: "Extension nodes", upload: "Upload assets", appearance: "Canvas appearance", clear: "Clear canvas",
-            themeMode: "Theme", light: "Light", dark: "Dark", gridStyle: "Grid style", dots: "Dots", lines: "Lines", blank: "Blank", imageInfo: "Image info",
+            gridStyle: "Grid style", dots: "Dots", lines: "Lines", blank: "Blank", imageInfo: "Image info",
         },
         project: {
             untitled: "Untitled canvas", imported: "Imported canvas",
@@ -300,8 +297,6 @@ export default {
         docs: "Documentation",
         switchLanguage: "Switch to {{language}}",
         shortcuts: "Keyboard shortcuts",
-        lightTheme: "Switch to light theme",
-        darkTheme: "Switch to dark theme",
     },
     config: {
         title: "Settings & Preferences",

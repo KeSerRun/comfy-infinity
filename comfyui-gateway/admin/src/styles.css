@@ -12,6 +12,7 @@
     --ok: oklch(0.72 0.17 150);
     --bad: oklch(0.64 0.20 25);
     --radius: 10px;
+    --sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
   }
 
   :root[data-theme="light"] {
@@ -32,7 +33,7 @@
   html, body { margin: 0; background: var(--bg); }
   body {
     color: var(--fg);
-    font: 13px/1.55 "SF Pro Display", "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    font: 14px/1.5 var(--sans);
     -webkit-font-smoothing: antialiased;
   }
   a { color: var(--muted); text-decoration: none; }
@@ -49,24 +50,10 @@
     align-items: stretch;
     gap: 16px;
   }
-  .brand { display: flex; align-items: center; align-self: center; gap: 9px; font-size: 14px; font-weight: 500; letter-spacing: -0.01em; }
-  .mark { width: 20px; height: 20px; border-radius: 6px; object-fit: cover; display: block; flex: none; }
   .top-right { display: flex; align-items: center; align-self: center; justify-self: end; gap: 16px; font-size: 12px; }
   .status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); flex: none; }
   .dot.ok { background: var(--ok); }
-  .theme-toggle {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 24px; height: 24px; padding: 0;
-    border: 1px solid var(--border); border-radius: 7px;
-    background: transparent; color: var(--muted);
-  }
-  .theme-toggle:hover { color: var(--fg); border-color: var(--border-strong); }
-  .theme-toggle svg { width: 13px; height: 13px; }
-  .theme-toggle .icon-moon { display: none; }
-  :root[data-theme="light"] .theme-toggle .icon-moon { display: inline-block; }
-  :root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
-
   main { max-width: 960px; margin: 0 auto; padding: 32px 28px 72px; }
   .intro h1 { margin: 0; font-size: 22px; font-weight: 500; letter-spacing: -0.02em; }
   .intro p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
@@ -241,7 +228,6 @@
 
   @media (max-width: 600px) {
     .top { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding: 0 16px; }
-    .brand-name { display: none; }
     .top-right { gap: 10px; }
     main { padding: 28px 16px 48px; }
     .tabs { width: auto; padding: 0; }

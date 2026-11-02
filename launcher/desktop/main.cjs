@@ -1,19 +1,20 @@
 "use strict";
 
 /**
- * Comfy Infinity 桌面外壳：托盘 + 控制台窗口 + 画布窗口。
+ * Comfy Infinity 桌面外壳：托盘 + 单窗口标签页。
  *
  * 只做三件事：
  *   1. 以子进程方式运行 launcher/start.mjs --no-open（启动逻辑完全复用，不改动原路径）；
- *   2. 窗口加载启动器自带的 8290 控制台页面；
- *   3. 退出时通知启动器（POST /shutdown）按原有规则关停网关/ComfyUI。
+ *   2. 统一窗口承载控制台、画布、模型配置三个标签；
+ *   3. 退出时通知启动器（POST /shutdown）按原有规则关停服务。
  */
 
-const { app, BrowserWindow, Menu, Tray, dialog, nativeImage, screen, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, screen, shell } = require("electron");
 const { spawn, spawnSync } = require("node:child_process");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
-const { findRepoRoot, isConsoleUrl, isFile, nodeLaunchCommand, readLauncherConfig, resolvePorts } = require("./lib.cjs");
+const { findRepoRoot, isFile, nodeLaunchCommand, readLauncherConfig, resolvePorts } = require("./lib.cjs");
 
 const APP_TITLE = "Comfy Infinity";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -31,11 +32,10 @@ const CONTROL_URL = `http://127.0.0.1:${controlPort}`;
 
 let tray = null;
 let mainWindow = null;
-let canvasWindow = null;
-let adminWindow = null;
 let launcherChild = null;
 let controlReady = false;
-let consoleLoaded = false;
+let shellReady = false;
+let pendingShellRequest = null;
 let consoleLoading = false;
 let restartBusy = false;
 let quitting = false;
@@ -154,20 +154,32 @@ function initialMainWindowSize() {
 }
 
 function createMainWindow() {
-  consoleLoaded = false;
+  shellReady = false;
+  const shellUrl = new URL(pathToFileURL(path.join(__dirname, "shell.html")).toString());
+  shellUrl.searchParams.set("console", `${CONTROL_URL}/`);
+  shellUrl.searchParams.set("canvas", `http://127.0.0.1:${canvasPort}/canvas`);
+  shellUrl.searchParams.set("admin", `http://127.0.0.1:${gatewayPort}/admin`);
   mainWindow = new BrowserWindow({
     ...initialMainWindowSize(),
-    minWidth: 880,
-    minHeight: 620,
+    minWidth: 980,
+    minHeight: 680,
     title: APP_TITLE,
     backgroundColor: "#0b0d12",
     icon: ICON_PATH || undefined,
     show: false,
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#11151d",
+      symbolColor: "#e8ecf3",
+      height: 45,
+    },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      webviewTag: true,
+      preload: path.join(__dirname, "shell-preload.cjs"),
     },
   });
   mainWindow.setMenuBarVisibility(false);
@@ -175,15 +187,38 @@ function createMainWindow() {
     routeExternalUrl(url);
     return { action: "deny" };
   });
-  // 控制台窗口只允许停留在控制台页面：画布、网关管理页交给 Electron 窗口，其余外链交给浏览器。
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (isConsoleUrl(url, controlPort)) return;
+    if (url.startsWith("file:")) return;
     event.preventDefault();
     routeExternalUrl(url);
   });
+  mainWindow.webContents.on("will-attach-webview", (_event, webPreferences) => {
+    webPreferences.preload = path.join(__dirname, "webview-preload.cjs");
+  });
+  // webview 里的 target="_blank" / window.open 不会走主窗口的 windowOpenHandler，
+  // 需要单独接到统一路由，否则控制台里的打开画布、模型配置等链接会被静默拦截。
+  mainWindow.webContents.on("did-attach-webview", (_event, guest) => {
+    guest.setWindowOpenHandler(({ url }) => {
+      routeExternalUrl(url);
+      return { action: "deny" };
+    });
+    guest.on("will-navigate", (event, url) => {
+      if (isGatewayAdminUrl(url) || isCanvasUrl(url)) {
+        event.preventDefault();
+        routeExternalUrl(url);
+      }
+    });
+  });
+  mainWindow.webContents.on("did-finish-load", () => {
+    shellReady = true;
+    if (pendingShellRequest) {
+      const request = pendingShellRequest;
+      pendingShellRequest = null;
+      applyShellRequest(request);
+    }
+  });
   mainWindow.webContents.on("did-fail-load", (_event, code, _description, _url, isMainFrame) => {
-    // 忽略导航被打断（例如启动页正在换成控制台），只处理真正的加载失败。
-    if (isMainFrame && code !== -3) consoleLoaded = false;
+    if (isMainFrame && code !== -3) shellReady = false;
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("close", (event) => {
@@ -194,8 +229,64 @@ function createMainWindow() {
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
+    shellReady = false;
+    pendingShellRequest = null;
   });
-  void mainWindow.loadFile(path.join(__dirname, "loading.html"));
+  void mainWindow.loadURL(shellUrl.toString());
+}
+
+ipcMain.on("open-external", (_event, url) => {
+  if (typeof url === "string") routeExternalUrl(url);
+});
+
+ipcMain.on("window-theme", (event, theme) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return;
+  const light = theme === "light";
+  try {
+    win.setTitleBarOverlay({
+      color: light ? "#fffdfa" : "#11151d",
+      symbolColor: light ? "#211d19" : "#e8ecf3",
+      height: 45,
+    });
+  } catch {
+    /* 非 Windows 平台或旧版 Electron 没有标题栏覆盖层 */
+  }
+});
+
+function applyShellRequest({ tab, url = "", reload = false }) {
+  if (!mainWindow || !shellReady) return;
+  const script = `window.comfyShell && window.comfyShell.show(${JSON.stringify(tab)}, ${JSON.stringify(url)}, ${reload ? "true" : "false"})`;
+  void mainWindow.webContents.executeJavaScript(script).catch((error) => {
+    console.error(`[desktop] 切换标签失败：${error.message}`);
+  });
+}
+
+function focusMainWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.moveTop?.();
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false);
+  }, 200);
+}
+
+function activateShell(tab, url = "", reload = false) {
+  const request = { tab, url, reload };
+  if (!mainWindow) {
+    createMainWindow();
+    pendingShellRequest = request;
+    return;
+  }
+  focusMainWindow();
+  if (!shellReady) {
+    pendingShellRequest = request;
+    return;
+  }
+  applyShellRequest(request);
 }
 
 async function loadConsole() {
@@ -212,10 +303,8 @@ async function loadConsole() {
       );
       return;
     }
-    await mainWindow.loadURL(`${CONTROL_URL}/`);
-    consoleLoaded = true;
+    activateShell("console", `${CONTROL_URL}/`, true);
   } catch (error) {
-    consoleLoaded = false;
     console.error(`[desktop] 控制台加载失败：${error.message}`);
   } finally {
     consoleLoading = false;
@@ -225,20 +314,10 @@ async function loadConsole() {
 function showConsole() {
   if (!mainWindow) {
     createMainWindow();
-    void loadConsole();
-    return;
   }
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  // Windows 会拦截后台程序抢焦点：短暂置顶，确保从托盘唤起的窗口浮到画布窗口上面。
-  mainWindow.setAlwaysOnTop(true);
-  mainWindow.show();
-  mainWindow.focus();
-  mainWindow.moveTop?.();
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(false);
-  }, 200);
-  // 窗口可能停在启动页，或之前被控制台里的链接导航到了画布/管理页；补一次控制台加载。
-  if (!consoleLoaded || !isConsoleUrl(mainWindow.webContents.getURL(), controlPort)) void loadConsole();
+  focusMainWindow();
+  activateShell("console", `${CONTROL_URL}/`);
+  if (!controlReady) void loadConsole();
 }
 
 async function resolveCanvasUrl() {
@@ -250,16 +329,6 @@ async function resolveCanvasUrl() {
 
 async function openGatewayAdmin() {
   const status = await readStatus();
-  if (status?.services?.gateway?.reachable === false) {
-    dialog.showErrorBox("网关未启动", "本地网关还没有就绪，请稍后重试或在控制台启动网关。");
-    return;
-  }
-  if (adminWindow && !adminWindow.isDestroyed()) {
-    if (adminWindow.isMinimized()) adminWindow.restore();
-    adminWindow.show();
-    adminWindow.focus();
-    return;
-  }
   const gatewayUrl = status?.services?.gateway?.url || `http://127.0.0.1:${gatewayPort}`;
   let adminUrl;
   try {
@@ -268,99 +337,13 @@ async function openGatewayAdmin() {
     dialog.showErrorBox("网关地址无效", String(gatewayUrl));
     return;
   }
-  adminWindow = new BrowserWindow({
-    width: 1280,
-    height: 900,
-    minWidth: 900,
-    minHeight: 640,
-    title: `${APP_TITLE} · 网关管理`,
-    backgroundColor: "#0b0d12",
-    icon: ICON_PATH || undefined,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
-  });
-  adminWindow.setMenuBarVisibility(false);
-  adminWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isConsoleUrl(url, controlPort)) {
-      showConsole();
-      return { action: "deny" };
-    }
-    if (isGatewayAdminUrl(url)) return { action: "deny" };
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
-    return { action: "deny" };
-  });
-  adminWindow.webContents.on("will-navigate", (event, url) => {
-    if (isGatewayAdminUrl(url)) return;
-    event.preventDefault();
-    if (isConsoleUrl(url, controlPort)) showConsole();
-    else routeExternalUrl(url);
-  });
-  adminWindow.on("closed", () => {
-    adminWindow = null;
-  });
-  try {
-    await adminWindow.loadURL(adminUrl);
-  } catch (error) {
-    console.error(`[desktop] 网关管理页加载失败：${error.message}`);
-    dialog.showErrorBox("网关管理页加载失败", `${adminUrl}\n${error.message}`);
-  }
+  activateShell("admin", adminUrl);
 }
 
 async function openCanvas() {
-  const url = await resolveCanvasUrl();
-  if (!url) {
-    dialog.showErrorBox("画布未启动", "画布服务还没有就绪，请稍后重试或在控制台查看状态。");
-    return;
-  }
-  if (canvasWindow && !canvasWindow.isDestroyed()) {
-    if (canvasWindow.isMinimized()) canvasWindow.restore();
-    canvasWindow.show();
-    canvasWindow.focus();
-    return;
-  }
-  canvasWindow = new BrowserWindow({
-    width: 1480,
-    height: 920,
-    minWidth: 1024,
-    minHeight: 720,
-    title: `${APP_TITLE} · 画布`,
-    backgroundColor: "#0b0d12",
-    icon: ICON_PATH || undefined,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
-  });
-  canvasWindow.setMenuBarVisibility(false);
-  // 画布里的「控制台」按钮指向启动器控制台：桌面版直接切回控制台窗口，不把画布窗口导航走。
-  canvasWindow.webContents.on("will-navigate", (event, url) => {
-    if (isGatewayAdminUrl(url)) {
-      event.preventDefault();
-      void openGatewayAdmin();
-      return;
-    }
-    if (!isConsoleUrl(url, controlPort)) return;
-    event.preventDefault();
-    showConsole();
-  });
-  canvasWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isConsoleUrl(url, controlPort)) {
-      showConsole();
-      return { action: "deny" };
-    }
-    if (isGatewayAdminUrl(url)) {
-      void openGatewayAdmin();
-      return { action: "deny" };
-    }
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
-    return { action: "deny" };
-  });
-  canvasWindow.on("closed", () => {
-    canvasWindow = null;
-  });
-  try {
-    // 直接进入「我的画布」列表，跳过已删除的落地首页。
-    await canvasWindow.loadURL(`${url.replace(/\/+$/, "")}/canvas`);
-  } catch (error) {
-    console.error(`[desktop] 画布加载失败：${error.message}`);
-    dialog.showErrorBox("画布加载失败", `${url}\n${error.message}`);
-  }
+  const url = (await resolveCanvasUrl()) || `http://127.0.0.1:${canvasPort}`;
+  // 直接进入「我的画布」列表；服务未启动时由画布标签页显示提示。
+  activateShell("canvas", `${url.replace(/\/+$/, "")}/canvas`);
 }
 
 /* --------------------------------------------------------------- 托盘菜单 */
@@ -369,7 +352,7 @@ function trayMenuTemplate() {
   return [
     { label: controlReady ? "打开控制台" : "打开控制台（启动中…）", click: () => showConsole() },
     { label: "打开画布", click: () => void openCanvas() },
-    { label: "打开网关管理页", click: () => void openGatewayAdmin() },
+    { label: "打开模型配置", click: () => void openGatewayAdmin() },
     { type: "separator" },
     {
       label: restartBusy ? "正在重启 ComfyUI…" : "重启 ComfyUI",

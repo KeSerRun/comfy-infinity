@@ -3,9 +3,8 @@ export default {
         title: "Comfy Infinity",
         description: "本地 AI 创作工作台",
     },
-    theme: { toggle: "切换主题" },
     gateway: {
-        reconnecting: "本地网关连接断开，正在自动重连…",
+        reconnecting: "本地模型配置连接断开，正在自动重连…",
     },
     common: {
         cancel: "取消",
@@ -36,7 +35,7 @@ export default {
     settingsPanels: {
         common: { auto: "自动", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高", fixedSeed: "固定种子", fixedSeedHint: "关闭时每次随机，开启后固定使用下方种子", seedPlaceholder: "随机种子" },
         image: { title: "图像设置", quality: "质量", size: "尺寸", align16: "16 倍数对齐", align16Hint: "输入完成后自动向上补成 16 的倍数", resolution: "分辨率", aspectRatio: "宽高比", transparent: "透明背景", transparentHint: "开启后生成无背景的透明图像（仅部分模型可用）", count: "生成张数", images: "{{count}} 张" },
-        video: { title: "视频设置", quality: "清晰度", size: "尺寸", seconds: "秒数", followSource: "跟随原视频", interpolation: "插帧", interpolationOff: "关闭", interpolation2x: "2×", interpolation3x: "3×", interpolationHint: "RIFE 后处理，生成后约增加 20–35 秒；仅本地网关生效", selfLiftMode: "精修", selfLiftFast: "快速", selfLiftQuality: "质量", selfLiftHint: "两档总 NFE 相同；质量档把更多步放在全分辨率", speedTier: "速度档", speedTierTurbo: "极速", speedTierFast: "快速", mode: "模式", modes: { frames: "首尾帧模式", text: "文生", textH3: "文生", framesH3: "首尾帧", reference: "全能参考模式", referenceH3: "多参", textHint: "纯文生：不接任何图片/音频/视频", framesHint: "首尾帧：1–2 张图；可选首帧、尾帧或首尾帧", referenceHint: "多参：1–6 图 + 0–2 音频 + 0–1 视频，至少一种媒体；不支持首尾帧", framePosition: "首尾帧位置", firstFrame: "首帧", lastFrame: "尾帧", bothFrames: "首尾帧" }, resolution: "分辨率", ratio: "比例", duration: "时长", smart: "智能", output: "输出", generateAudio: "生成声音", watermark: "添加水印", adaptive: "自适应", sizes: { landscape: "横屏", portrait: "竖屏", square: "方形", widescreen: "宽屏", tall: "长图", auto: "自动" }, ratios: { landscape: "横屏", portrait: "竖屏", square: "方形", standardLandscape: "标准横屏", standardPortrait: "标准竖屏", cinematic: "宽银幕", adaptive: "自适应" } },
+        video: { title: "视频设置", quality: "清晰度", size: "尺寸", seconds: "秒数", followSource: "跟随原视频", interpolation: "插帧", interpolationOff: "关闭", interpolation2x: "2×", interpolation3x: "3×", interpolationHint: "RIFE 后处理，生成后约增加 20–35 秒；仅本地模型配置生效", selfLiftMode: "精修", selfLiftFast: "快速", selfLiftQuality: "质量", selfLiftHint: "两档总 NFE 相同；质量档把更多步放在全分辨率", speedTier: "速度档", speedTierTurbo: "极速", speedTierFast: "快速", mode: "模式", modes: { frames: "首尾帧模式", text: "文生", textH3: "文生", framesH3: "首尾帧", reference: "全能参考模式", referenceH3: "多参", textHint: "纯文生：不接任何图片/音频/视频", framesHint: "首尾帧：1–2 张图；可选首帧、尾帧或首尾帧", referenceHint: "多参：1–6 图 + 0–2 音频 + 0–1 视频，至少一种媒体；不支持首尾帧", framePosition: "首尾帧位置", firstFrame: "首帧", lastFrame: "尾帧", bothFrames: "首尾帧" }, resolution: "分辨率", ratio: "比例", duration: "时长", smart: "智能", output: "输出", generateAudio: "生成声音", watermark: "添加水印", adaptive: "自适应", sizes: { landscape: "横屏", portrait: "竖屏", square: "方形", widescreen: "宽屏", tall: "长图", auto: "自动" }, ratios: { landscape: "横屏", portrait: "竖屏", square: "方形", standardLandscape: "标准横屏", standardPortrait: "标准竖屏", cinematic: "宽银幕", adaptive: "自适应" } },
         audio: { title: "音频设置", voice: "声音", format: "格式", speed: "语速", instructions: "声音指令", instructionsPlaceholder: "例如：自然、温暖、适合旁白。" },
         text: { title: "文本设置", reasoning: "推理强度", count: "生成次数" },
         model: { select: "选择模型", assign: "请先在渠道里为{{capability}}指定模型", noMatch: "暂无匹配的{{capability}}模型", addFirst: "请先到配置里添加渠道和模型", defaultBase: "默认底模", capabilities: { image: "生图", video: "视频", text: "文本", audio: "音频" } },
@@ -46,7 +45,7 @@ export default {
     modelPlugin: {
         pollTimeout: "插件轮询超时，请检查调用脚本或稍后重试", executionFailed: "模型调用脚本执行失败：{{message}}", noImages: "模型调用脚本没有返回图片",
     },
-    apiErrors: { requestFailed: "请求失败", requestCanceled: "请求已取消", baseUrlRequired: "请先配置 Base URL", apiKeyRequired: "请先配置 API Key", authenticationFailed: "鉴权失败，请检查 API Key、套餐权限或模型权限", rateLimited: "请求被限流或额度不足，请稍后重试", notFound: "接口地址不存在（404），请检查 Base URL 和模型选择", badGateway: "网关错误（502），接口服务暂时不可用，请稍后重试", serviceBusy: "服务繁忙（503），请稍后重试", httpFailed: "请求失败（HTTP {{status}}），请检查 Base URL 和 API Key 是否正确", htmlError: "服务返回了 HTML 错误页面（{{preview}}）", imageTimeout: "生图请求超时，接口长时间没有返回，请稍后重试或更换渠道", audioModelRequired: "请先配置音频模型", audioGenerationFailed: "音频生成失败", scriptNoAudio: "模型调用脚本没有返回音频", geminiAudioUnsupported: "Gemini 调用格式暂不支持音频生成，请使用 OpenAI 格式渠道", invalidImageSizeFormat: "图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024", positiveImageRatio: "图像比例必须是正数，例如 9:16", imageRatioLimit: "图像宽高比不能超过 3:1，请调整尺寸", positiveImageDimensions: "图像尺寸必须是正整数，例如 1024x1024", imageDimensionStep: "图像尺寸的宽高必须是 16 的倍数，请调整尺寸", imageEdgeLimit: "图像尺寸最长边不能超过 3840px，请调整尺寸", imagePixelLimit: "图像总像素需在 655360 到 8294400 之间，请调整尺寸", unknownImageResponse: "接口返回了未知格式的数据（字段：{{fields}}），请检查模型或接口兼容性", noImageReturned: "接口没有返回图片，请检查提示词是否触发安全审核或模型是否支持该操作", geminiRejected: "Gemini 拒绝了本次请求：{{reason}}", geminiNoImage: "Gemini 接口没有返回图片", maskModelUnsupported: "蒙版编辑暂不支持该模型，请使用其他渠道", noContent: "没有返回内容", modelReadFailed: "读取模型失败", videoTimeout: "{{provider}}视频生成超时，请稍后重试", pluginVideoExpired: "插件视频任务已失效，请重新生成", scriptNoVideo: "模型调用脚本没有返回视频", noPlayableVideo: "视频接口没有返回可播放的视频", noVideoTaskId: "视频接口没有返回任务 ID", videoTaskCreateFailed: "视频任务创建失败", videoGenerationFailed: "视频生成失败", videoTaskQueryFailed: "视频任务查询失败", videoPromptRequired: "请输入视频提示词，或连接参考图片/视频/音频", referenceImageReadFailed: "参考图读取失败，请换一张图片或重新上传", invalidReferenceVideo: "参考视频必须是公网 URL、资产 ID，或本地已保存的视频", invalidReferenceAudio: "参考音频必须是公网 URL、资产 ID，或本地已保存的音频", videoModelRequired: "请先配置视频模型", geminiVideoUnsupported: "Gemini 调用格式暂不支持视频生成，请使用 OpenAI 格式渠道", noVideoTask: "接口没有返回视频任务", videoDownloadFailed: "视频下载失败", localAssetReadFailed: "读取本地资产失败", upscaleLocalOnly: "AI 超分仅支持本地网关", upscaleNoWorkflow: "没有可用的超分工作流", promptOptimizeLocalOnly: "提示词优化仅支持本地网关", promptOptimizeEmpty: "提示词优化没有返回文本" },    assets: {
+    apiErrors: { requestFailed: "请求失败", requestCanceled: "请求已取消", baseUrlRequired: "请先配置 Base URL", apiKeyRequired: "请先配置 API Key", authenticationFailed: "鉴权失败，请检查 API Key、套餐权限或模型权限", rateLimited: "请求被限流或额度不足，请稍后重试", notFound: "接口地址不存在（404），请检查 Base URL 和模型选择", badGateway: "网关错误（502），接口服务暂时不可用，请稍后重试", serviceBusy: "服务繁忙（503），请稍后重试", httpFailed: "请求失败（HTTP {{status}}），请检查 Base URL 和 API Key 是否正确", htmlError: "服务返回了 HTML 错误页面（{{preview}}）", imageTimeout: "生图请求超时，接口长时间没有返回，请稍后重试或更换渠道", audioModelRequired: "请先配置音频模型", audioGenerationFailed: "音频生成失败", scriptNoAudio: "模型调用脚本没有返回音频", geminiAudioUnsupported: "Gemini 调用格式暂不支持音频生成，请使用 OpenAI 格式渠道", invalidImageSizeFormat: "图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024", positiveImageRatio: "图像比例必须是正数，例如 9:16", imageRatioLimit: "图像宽高比不能超过 3:1，请调整尺寸", positiveImageDimensions: "图像尺寸必须是正整数，例如 1024x1024", imageDimensionStep: "图像尺寸的宽高必须是 16 的倍数，请调整尺寸", imageEdgeLimit: "图像尺寸最长边不能超过 3840px，请调整尺寸", imagePixelLimit: "图像总像素需在 655360 到 8294400 之间，请调整尺寸", unknownImageResponse: "接口返回了未知格式的数据（字段：{{fields}}），请检查模型或接口兼容性", noImageReturned: "接口没有返回图片，请检查提示词是否触发安全审核或模型是否支持该操作", geminiRejected: "Gemini 拒绝了本次请求：{{reason}}", geminiNoImage: "Gemini 接口没有返回图片", maskModelUnsupported: "蒙版编辑暂不支持该模型，请使用其他渠道", noContent: "没有返回内容", modelReadFailed: "读取模型失败", videoTimeout: "{{provider}}视频生成超时，请稍后重试", pluginVideoExpired: "插件视频任务已失效，请重新生成", scriptNoVideo: "模型调用脚本没有返回视频", noPlayableVideo: "视频接口没有返回可播放的视频", noVideoTaskId: "视频接口没有返回任务 ID", videoTaskCreateFailed: "视频任务创建失败", videoGenerationFailed: "视频生成失败", videoTaskQueryFailed: "视频任务查询失败", videoPromptRequired: "请输入视频提示词，或连接参考图片/视频/音频", referenceImageReadFailed: "参考图读取失败，请换一张图片或重新上传", invalidReferenceVideo: "参考视频必须是公网 URL、资产 ID，或本地已保存的视频", invalidReferenceAudio: "参考音频必须是公网 URL、资产 ID，或本地已保存的音频", videoModelRequired: "请先配置视频模型", geminiVideoUnsupported: "Gemini 调用格式暂不支持视频生成，请使用 OpenAI 格式渠道", noVideoTask: "接口没有返回视频任务", videoDownloadFailed: "视频下载失败", localAssetReadFailed: "读取本地资产失败", upscaleLocalOnly: "AI 超分仅支持本地模型配置", upscaleNoWorkflow: "没有可用的超分工作流", promptOptimizeLocalOnly: "提示词优化仅支持本地模型配置", promptOptimizeEmpty: "提示词优化没有返回文本" },    assets: {
         title: "我的资产",
         description: "收藏常用文本和图片，按类型、标题和标签快速查找。",
         search: "搜索标题、内容、标签或来源",
@@ -136,11 +135,10 @@ export default {
         retrySuccess: "重试成功",
     },
     canvas: {
-        backToCanvas: "我的画布",
-        backToCanvasHint: "打开我的画布",
         defaultTitle: "无限画布 {{count}}",
         library: "画布库",
         title: "无限画布",
+        workflowEmpty: "工作流为空，请到模型配置页面配置",
         fishWhip: { bubble: "我将守护你的进程" },
         imported: "已导入 {{count}} 个画布",
         importFailed: "导入失败，请选择有效的画布压缩包",
@@ -157,7 +155,6 @@ export default {
         expandPanel: "展开面板",
         home: "主页",
         docs: "文档",
-        projects: "我的画布",
         deleteCurrent: "删除当前画布",
         importAsset: "导入资产",
         exportCurrent: "导出当前画布",
@@ -193,7 +190,7 @@ export default {
         },
         toolbar: {
             select: "选择", pan: "移动", focus: "居中聚焦", text: "文本", image: "图片", video: "视频", audio: "音频", config: "生成配置", freeCard: "自由卡片", group: "组", extensions: "扩展节点", upload: "上传资产", appearance: "画布外观", clear: "清空画布",
-            themeMode: "主题模式", light: "浅色", dark: "深色", gridStyle: "网格样式", dots: "点", lines: "线", blank: "空白", imageInfo: "图片信息",
+            gridStyle: "网格样式", dots: "点", lines: "线", blank: "空白", imageInfo: "图片信息",
         },
         project: {
             untitled: "未命名画布", imported: "导入画布",
@@ -300,14 +297,12 @@ export default {
         docs: "文档",
         switchLanguage: "切换到 {{language}}",
         shortcuts: "快捷键",
-        lightTheme: "切换到浅色主题",
-        darkTheme: "切换到深色主题",
     },
     config: {
         title: "配置与用户偏好",
         invalidFile: "配置文件格式不正确",
         description: "默认模型、本地存储与其他偏好",
-        modalDescription: "默认模型、本地存储与网关入口",
+        modalDescription: "默认模型、本地存储与模型配置入口",
         tabs: {
             preferences: "偏好设置",
             localStorage: "本地存储",

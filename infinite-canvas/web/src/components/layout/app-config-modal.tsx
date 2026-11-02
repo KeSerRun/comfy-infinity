@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { ModelPicker, WorkflowModelPicker } from "@/components/model-picker";
 import { imageAspectOptions } from "@/components/image-settings-panel";
-import { LOCAL_GATEWAY_ORIGIN, LOCAL_ONLY } from "@/constant/app-mode";
+import { LOCAL_ONLY } from "@/constant/app-mode";
 import { videoResolutionOptions } from "@/components/video-settings-panel";
 import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
@@ -72,12 +72,6 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "preferenc
     return (
         <>
             <div className="border-b border-stone-200 pb-3 text-xs text-stone-500 dark:border-stone-800">配置只保存在本机浏览器。</div>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 px-4 py-3 dark:border-stone-800">
-                <div className="text-xs text-stone-500">工作流与模型目录由本地网关管理；请到网关管理页配置 ComfyUI 和工作流目录。</div>
-                <Button size="small" href={`${LOCAL_GATEWAY_ORIGIN}/admin`} target="_blank" rel="noopener noreferrer">
-                    打开网关管理页
-                </Button>
-            </div>
             <Tabs
                 activeKey={activeTab}
                 onChange={(key) => setActiveTab(key as ConfigTabKey)}

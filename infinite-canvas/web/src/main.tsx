@@ -8,7 +8,9 @@ import { AppProviders } from "@/components/layout/app-providers";
 import "@/i18n";
 import { router } from "@/router";
 
-document.body.style.fontFamily = '"SF Pro Display","SF Pro Text","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif';
+document.body.style.fontFamily = '"Segoe UI","Microsoft YaHei UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif';
+document.body.style.fontSize = "14px";
+document.body.style.lineHeight = "1.5";
 
 createRoot(document.getElementById("root")!).render(
     <React.StrictMode>

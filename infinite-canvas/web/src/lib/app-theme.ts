@@ -1,6 +1,8 @@
 import type { ThemeConfig } from "antd";
 import { theme as antdTheme } from "antd";
 
+const FONT_SANS = '"Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif';
+
 const neutral = {
     light: {
         primary: "#171717",
@@ -35,6 +37,7 @@ export function getAntThemeConfig(dark: boolean): ThemeConfig {
         algorithm: dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         cssVar: { key: dark ? "infinite-canvas-dark" : "infinite-canvas-light" },
         token: {
+            fontFamily: FONT_SANS,
             colorPrimary: color.primary,
             colorInfo: color.primary,
             colorLink: color.primary,

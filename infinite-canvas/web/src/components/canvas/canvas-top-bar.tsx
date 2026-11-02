@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { Download, Home, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
 import { Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -21,7 +21,6 @@ export function CanvasTopBar({
     canUndo,
     canRedo,
     onHome,
-    onProjects,
     onCreateProject,
     onDeleteProject,
     onExportProject,
@@ -39,7 +38,6 @@ export function CanvasTopBar({
     canUndo: boolean;
     canRedo: boolean;
     onHome: () => void;
-    onProjects: () => void;
     onCreateProject: () => void;
     onDeleteProject: () => void;
     onExportProject: () => void;
@@ -84,7 +82,6 @@ export function CanvasTopBar({
                         menu={{
                             items: [
                                 { key: "home", icon: <Home className="size-4" />, label: t("canvas.home"), onClick: onHome },
-                                { key: "projects", icon: <Images className="size-4" />, label: t("canvas.projects"), onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: t("canvas.create"), onClick: onCreateProject },
                                 { key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: t("canvas.deleteCurrent"), onClick: onDeleteProject },

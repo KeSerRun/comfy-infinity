@@ -23,6 +23,15 @@ export function AppProviders({ children }: { children: ReactNode }) {
     }, [dark, theme]);
 
     useEffect(() => {
+        const onTheme = (event: Event) => {
+            const next = (event as CustomEvent<string>).detail;
+            if (next === "light" || next === "dark") useThemeStore.getState().setTheme(next);
+        };
+        window.addEventListener("comfy-theme", onTheme);
+        return () => window.removeEventListener("comfy-theme", onTheme);
+    }, []);
+
+    useEffect(() => {
         document.documentElement.lang = locale;
         document.title = t("meta.title");
         document.querySelector('meta[name="description"]')?.setAttribute("content", t("meta.description"));
