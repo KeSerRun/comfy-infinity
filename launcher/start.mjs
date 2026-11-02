@@ -77,8 +77,7 @@ function browseHostFor(bindHost) {
 
 /* ------------------------------------------------------------------ 日志 */
 
-function log(message, level = "INFO") {
-  const line = `[${new Date().toISOString()}] [${level}] ${message}`;
+function writeLogLine(line) {
   console.log(line);
   try {
     fs.appendFileSync(LOG_PATH, line + os.EOL);
@@ -87,10 +86,21 @@ function log(message, level = "INFO") {
   }
 }
 
+function log(message, level = "INFO") {
+  writeLogLine(`[${new Date().toISOString()}] [${level}] ${message}`);
+}
+
 function forwardLines(chunk, tag) {
   const text = String(chunk);
   for (const piece of text.split(/\r?\n/)) {
-    if (piece.trim()) log(`[${tag}] ${piece}`, "CHILD");
+    const line = piece.trimEnd();
+    if (!line.trim()) continue;
+    // 网关子进程已经输出“[时间] [gateway] 级别 内容”，不要再套一层父级前缀。
+    if (/^\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s+\[[^\]]+\]/.test(line)) {
+      writeLogLine(line);
+    } else {
+      writeLogLine(`[${new Date().toISOString()}] [${tag}] ${line.trimStart()}`);
+    }
   }
 }
 
@@ -146,7 +156,7 @@ function loadConfig() {
     openConsole: merged.openConsole !== false,
     stopAdoptedComfyOnExit:
       process.env.STOP_ADOPTED_COMFY !== "0" &&
-      (merged.stopAdoptedComfyOnExit ?? merged.stopAdoptedComfyOnCanvasClose) !== false,
+      merged.stopAdoptedComfyOnExit !== false,
     allowLan: merged.allowLan === true,
     canvasHost: normalizeHost(merged.canvasHost, DEFAULT_CONFIG.canvasHost),
     gatewayHost: normalizeHost(merged.gatewayHost, DEFAULT_CONFIG.gatewayHost),
@@ -896,29 +906,6 @@ async function sendFile(req, res, filePath, statusCode = 200, cacheControl = "no
   stream.pipe(res);
 }
 
-function writeRuntimeConfig(cfg, gatewayUrl) {
-  const file = path.join(cfg.canvasDist, "config.js");
-  let runtime = {};
-  try {
-    const text = fs.readFileSync(file, "utf8");
-    const match = text.match(/window\.__RUNTIME_CONFIG__\s*=\s*(\{[\s\S]*?\})\s*;?/);
-    if (match) runtime = JSON.parse(match[1]);
-  } catch {
-    runtime = {};
-  }
-  let origin = "";
-  try {
-    origin = new URL(gatewayUrl).origin;
-  } catch {
-    origin = cfg.gatewayUrl;
-  }
-  runtime.LOCAL_GATEWAY_HOST = cfg.gatewayPublicHost || "127.0.0.1";
-  runtime.LOCAL_GATEWAY_PORT = String(cfg.gatewayPort);
-  runtime.LOCAL_GATEWAY_URL = `${origin}/v1`;
-  fs.writeFileSync(file, `window.__RUNTIME_CONFIG__ = ${JSON.stringify(runtime)};\n`, "utf8");
-  log(`运行时网关配置已写入：${runtime.LOCAL_GATEWAY_URL}`);
-}
-
 function createCanvasServer(cfg) {
   const distDir = path.resolve(cfg.canvasDist);
   const indexPath = path.join(distDir, "index.html");
@@ -1516,8 +1503,6 @@ async function startGatewayProcess(cfg) {
   await ensureGatewayDeps(cfg);
   const comfyUrl = state.comfyUrl || cfg.comfyUrl;
   const workflowsDir = cfg.comfyWorkflowsDir || "";
-  state.gatewayComfyUrl = comfyUrl;
-  state.gatewayWorkflowsDir = workflowsDir;
   state.starting.gateway = true;
   try {
     state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);
@@ -1667,17 +1652,6 @@ async function startControlServer(cfg) {
     res.setHeader("content-type", "application/json; charset=utf-8");
     try {
       const pathname = new URL(req.url, "http://127.0.0.1").pathname;
-      if (req.method === "GET" && pathname === "/app-icon.png") {
-        try {
-          const data = fs.readFileSync(path.join(__dirname, "app-icon.png"));
-          res.writeHead(200, { "content-type": "image/png", "cache-control": "max-age=3600" });
-          res.end(data);
-        } catch {
-          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-          res.end("404 Not Found");
-        }
-        return;
-      }
       if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
         try {
           res.setHeader("content-type", "text/html; charset=utf-8");
@@ -2047,8 +2021,6 @@ async function main() {
         log(`启动网关：${path.join(cfg.gatewayDir, "server", "dist", "server.js")}（PORT=${cfg.gatewayPort}，COMFY_URL=${comfyUrl}）`);
         try {
           await ensureGatewayDeps(cfg);
-          state.gatewayComfyUrl = comfyUrl;
-          state.gatewayWorkflowsDir = workflowsDir;
           state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);
         } catch (err) {
           log(err.message, "ERROR");
@@ -2093,11 +2065,6 @@ async function main() {
       log(`[dry-run] 将在 http://${browseHostFor(cfg.canvasHost)}:${cfg.canvasPort} 托管 ${cfg.canvasDist}（SPA fallback → index.html，绑 ${cfg.canvasHost}）`);
       canvasResult = { url: cfg.canvasUrl, mode: "planned" };
     } else {
-      try {
-        writeRuntimeConfig(cfg, cfg.gatewayPublicUrl || gatewayResult.url);
-      } catch (error) {
-        log(`写入运行时网关配置失败：${error.message}`, "WARN");
-      }
       let listen;
       state.starting.canvas = true;
       try {
@@ -2174,5 +2141,3 @@ if (invokedDirectly) {
     }
   });
 }
-
-export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer, isLoopbackHost, normalizeHost, browseHostFor, gpuFromWindowsSnapshot, readSystemStats };

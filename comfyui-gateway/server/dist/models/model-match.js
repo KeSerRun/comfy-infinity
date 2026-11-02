@@ -36,6 +36,7 @@ const FAMILY_TOKENS = new Set([
 ]);
 const ROLE_TOKENS = new Set(["vae", "clip", "text", "encoder", "te", "lora", "lycoris", "controlnet", "ipadapter", "upscale", "esrgan", "embedding"]);
 const QUALIFIER_TOKENS = new Set(["audio", "video", "image", "vision"]);
+const SERIES_TOKENS = new Set(["ace", "ace15", "acestep"]);
 export function parseModelName(value) {
     const normalized = String(value || "").replace(/\\/g, "/");
     const base = normalized.split("/").pop() || "";
@@ -94,6 +95,9 @@ function qualifiers(tokens) {
 function sizeTokens(tokens) {
     return tokens.filter((token) => /^\d+(?:\.\d+)?b$/i.test(token));
 }
+function seriesTokens(tokens) {
+    return tokens.filter((token) => SERIES_TOKENS.has(token));
+}
 function hasToken(tokens, name) {
     return tokens.includes(name);
 }
@@ -128,6 +132,10 @@ export function modelNameSimilarity(required, candidate) {
         return { ok: false, score: 0, reason: "role" };
     if (!sameSet(qualifiers(left.tokens), qualifiers(right.tokens)))
         return { ok: false, score: 0, reason: "qualifier" };
+    // ACE-Step 的文本编码器和普通 Qwen 编码器不是同类模型；不能让 qwen_4b_ace15
+    // 因为共享 qwen/4b 就自动顶替成 qwen_3_4b。
+    if (!sameSet(seriesTokens(left.tokens), seriesTokens(right.tokens)))
+        return { ok: false, score: 0, reason: "series" };
     // 规模不能跨规格顶替：4B/8B、9B/27B 不是同一模型。只有两边都带规模时才硬拦，
     // 兼容没有写参数量的文件名。
     const sizes = [sizeTokens(left.tokens), sizeTokens(right.tokens)];

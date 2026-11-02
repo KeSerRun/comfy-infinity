@@ -1190,6 +1190,52 @@ export async function createGatewayApp(overrides: any = {}) {
     res.json({ id: task.id, object: "video", status: "queued", progress: 0, created_at: Math.floor(Date.now() / 1000) });
   });
 
+  app.post("/v1/audio/speech", async (req, res) => {
+    await registry.reloadIfChanged();
+    const body = req.body || {};
+    const entry = requireModel(registry, setup, body.model, "audio");
+    const prompt = String(body.input || body.prompt || "").trim();
+    if (!prompt) throw new HttpError("音频生成请求缺少 input 或 prompt", { status: 400, code: "missing_audio_prompt" });
+    const seconds = Number(body.seconds ?? body.duration);
+    const context = buildContext({
+      prompt,
+      seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : undefined,
+      count: 1,
+      params: parseParams(body.params),
+    });
+    const abort = abortOnDisconnect(req, res, registerActiveRequest);
+    let result;
+    try {
+      result = await runWorkflow({
+        entry,
+        context,
+        comfy,
+        timeoutMs: config.requestTimeoutMs,
+        pollIntervalMs: config.pollIntervalMs,
+        signal: abort.signal,
+        requestId: req.id,
+        logger,
+        loraCatalog: setup.loraNames(),
+        modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
+      });
+    } catch (error) {
+      if (abort.signal.aborted) {
+        logger.info(`audio ${entry.name} 请求被客户端中断 ${req.id}`);
+        return;
+      }
+      throw error;
+    } finally {
+      abort.cleanup();
+    }
+    const file = result.files[0];
+    if (!file) throw new HttpError("音频工作流没有返回音频文件", { status: 502, code: "no_audio" });
+    logger.info(`audio ${entry.name} -> ${result.promptId} (${file.filename}) ${req.id}`);
+    res.setHeader("Content-Type", file.mimeType || "audio/mpeg");
+    res.setHeader("Content-Disposition", `inline; filename="${path.basename(file.filename)}"`);
+    res.send(file.buffer);
+  });
+
   app.post("/v1/images/generations", async (req, res) => {
     await registry.reloadIfChanged();
     const body = req.body || {};

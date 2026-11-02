@@ -175,6 +175,7 @@ const localDefaultChannel: ModelChannel = {
 
 const localImageModel = `${LOCAL_GATEWAY_CHANNEL_ID}::image-z-image-turbo`;
 const localVideoModel = `${LOCAL_GATEWAY_CHANNEL_ID}::video-h3-t2v`;
+const localAudioModel = `${LOCAL_GATEWAY_CHANNEL_ID}::audio-ace-step-15`;
 
 export const defaultConfig: AiConfig = LOCAL_ONLY
     ? {
@@ -187,7 +188,7 @@ export const defaultConfig: AiConfig = LOCAL_ONLY
           videoModel: localVideoModel,
           videoMode: "text",
           textModel: "",
-          audioModel: "",
+          audioModel: localAudioModel,
           models: LOCAL_GATEWAY_MODEL_VALUES,
           proxyEnabled: false,
       }
@@ -501,9 +502,11 @@ export const useConfigStore = create<ConfigStore>()(
                 const models = modelOptionsFromChannels(channels);
                 const imageOptions = channels.flatMap((channel) => channel.models.filter((model) => model.capability === "image").map((model) => encodeChannelModel(channel.id, model.name)));
                 const videoOptions = channels.flatMap((channel) => channel.models.filter((model) => model.capability === "video").map((model) => encodeChannelModel(channel.id, model.name)));
+                const audioOptions = channels.flatMap((channel) => channel.models.filter((model) => model.capability === "audio").map((model) => encodeChannelModel(channel.id, model.name)));
                 const pickModel = (current: string, options: string[]) => (options.includes(current) ? current : options[0] || "");
                 const imageModel = LOCAL_ONLY ? pickModel(config.imageModel || config.model, imageOptions) : normalizeModelOptionValue(config.imageModel || config.model, channels);
                 const videoModel = LOCAL_ONLY ? pickModel(config.videoModel, videoOptions) : normalizeModelOptionValue(config.videoModel, channels);
+                const audioModel = LOCAL_ONLY ? pickModel(config.audioModel, audioOptions) : normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels);
                 const normalizedCloud = normalizePromptCloudConfig(config);
                 return {
                     ...current,
@@ -517,7 +520,7 @@ export const useConfigStore = create<ConfigStore>()(
                         imageModel,
                         videoModel,
                         textModel: LOCAL_ONLY ? "" : normalizeModelOptionValue(config.textModel || config.model, channels),
-                        audioModel: LOCAL_ONLY ? "" : normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
+                        audioModel,
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
                         audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,

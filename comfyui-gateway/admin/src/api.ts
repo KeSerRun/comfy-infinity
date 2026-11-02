@@ -46,6 +46,8 @@ export const api = {
   repairWorkflow: async (id: string) =>
     (await request<{ job: ResourceJob }>(`/api/workflows/${encodeURIComponent(id)}/repair`, { method: "POST" })).job,
 
+  refreshResources: () => request<{ ok?: boolean; indexVersion?: string }>("/api/resources/refresh", { method: "POST" }),
+
   activeResourceJob: async () => (await request<{ job: ResourceJob | null }>("/api/resources/jobs/active")).job,
 
   resourceJob: async (id: string) => (await request<{ job: ResourceJob }>(`/api/resources/jobs/${encodeURIComponent(id)}`)).job,

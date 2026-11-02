@@ -171,8 +171,11 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
     setRefreshing(true);
     setNotice("");
     try {
+      await api.refreshResources();
       await loadWorkflows();
       onChanged();
+    } catch (error) {
+      setNotice(`刷新资源索引失败：${error instanceof Error ? error.message : error}`);
     } finally {
       setRefreshing(false);
     }
@@ -470,7 +473,7 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
           columns={columns}
           dataSource={filteredWorkflows}
           loading={loading}
-          size="small"
+          size="middle"
           tableLayout="fixed"
           locale={{ emptyText }}
           pagination={

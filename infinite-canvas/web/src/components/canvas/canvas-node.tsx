@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Puzzle, RefreshCw, Sparkles, Star, Trash2, Video } from "lucide-react";
+import { ChevronRight, Copy, Download, Group, Image as ImageIcon, LoaderCircle, Music2, Puzzle, RefreshCw, Sparkles, Star, Trash2, Video } from "lucide-react";
 
 import { canvasThemes, getCardBackground } from "@/lib/canvas-theme";
 import { useCanvasTheme, useEffectiveCardSkin } from "@/lib/canvas/use-canvas-theme";
@@ -8,7 +8,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { formatBytes } from "@/lib/image-utils";
 import { pickImageSource } from "@/lib/image-thumbnail";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision } from "@/services/image-storage";
-import { getNodeDefinition } from "@/lib/canvas/node-registry";
+import { getNodeDefinition, getNodePluginId } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasNodeProgressRing } from "./canvas-node-progress-ring";
@@ -136,6 +136,9 @@ export const CanvasNode = React.memo(function CanvasNode({
     const fishSkin = cardSkin === "fish";
     const angelSkin = cardSkin === "angel";
     const artSkin = fishSkin || angelSkin;
+    const pluginNode = getNodePluginId(data.type) !== "builtin";
+    const artSafeArea = artSkin && pluginNode && data.width >= 220 && data.height >= 90;
+    const pluginArtwork = !pluginNode || artSafeArea;
     const fishArtSize = Math.round(Math.max(15, Math.min(58, Math.min(data.height * 0.24, data.width * 0.15))));
     const cardBackground = getCardBackground(colorTheme, cardSkin);
     const titleTheme = canvasThemes[colorTheme].node;
@@ -424,14 +427,14 @@ export const CanvasNode = React.memo(function CanvasNode({
                         />
                         {fishSkin ? (
                             <>
-                                <img
+                                {pluginArtwork ? <img
                                     src="/skins/lantern-guard-idle.png"
                                     alt=""
                                     draggable={false}
-                                    className="absolute select-none opacity-95 drop-shadow-[0_10px_22px_rgba(0,8,20,.55)]"
-                                    style={{ height: "78%", width: "auto", maxWidth: "58%", right: "-2%", bottom: "-5%", objectFit: "contain", objectPosition: "bottom right" }}
-                                />
-                                <div className="absolute flex flex-col" style={{ left: "7%", top: "50%", transform: "translateY(-50%)", width: "54%" }}>
+                                    className={`absolute select-none drop-shadow-[0_10px_22px_rgba(0,8,20,.55)] ${pluginNode ? "opacity-40" : "opacity-95"}`}
+                                    style={{ height: pluginNode ? "58%" : "78%", width: "auto", maxWidth: pluginNode ? "38%" : "58%", right: "-2%", bottom: "-5%", objectFit: "contain", objectPosition: "bottom right" }}
+                                /> : null}
+                                {!pluginNode ? <div className="absolute flex flex-col" style={{ left: "7%", top: "50%", transform: "translateY(-50%)", width: "54%" }}>
                                     <span
                                         style={{
                                             fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
@@ -458,18 +461,18 @@ export const CanvasNode = React.memo(function CanvasNode({
                                     >
                                         PROCESS GUARDIAN
                                     </span>
-                                </div>
+                                </div> : null}
                             </>
                         ) : (
                             <>
-                                <img
+                                {pluginArtwork ? <img
                                     src="/skins/angel-girl-idle.webp"
                                     alt=""
                                     draggable={false}
-                                    className="absolute select-none opacity-95 drop-shadow-[0_10px_22px_rgba(0,8,20,.45)]"
-                                    style={{ height: "80%", width: "auto", maxWidth: "64%", right: "-2%", bottom: "-4%", objectFit: "contain", objectPosition: "bottom right" }}
-                                />
-                                <div className="absolute flex flex-col" style={{ left: "6%", top: "50%", transform: "translateY(-50%)", width: "42%" }}>
+                                    className={`absolute select-none drop-shadow-[0_10px_22px_rgba(0,8,20,.45)] ${pluginNode ? "opacity-40" : "opacity-95"}`}
+                                    style={{ height: pluginNode ? "58%" : "80%", width: "auto", maxWidth: pluginNode ? "38%" : "64%", right: "-2%", bottom: "-4%", objectFit: "contain", objectPosition: "bottom right" }}
+                                /> : null}
+                                {!pluginNode ? <div className="absolute flex flex-col" style={{ left: "6%", top: "50%", transform: "translateY(-50%)", width: "42%" }}>
                                     <span
                                         style={{
                                             fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
@@ -496,7 +499,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                                     >
                                         LIGHT BE WITH YOU
                                     </span>
-                                </div>
+                                </div> : null}
                             </>
                         )}
                         <span className="absolute right-[42%] top-[24%] size-1.5 rounded-full" style={{ background: angelSkin ? "rgba(255,235,180,.35)" : "rgba(207,250,254,.25)" }} />
@@ -519,6 +522,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         {
                             background: isGroup ? "transparent" : hasImageContent || hasVideoContent || transparentBg ? "transparent" : artSkin ? "transparent" : theme.node.fill,
                             pointerEvents: contentInteractive ? undefined : "none",
+                            ...(artSafeArea ? { paddingRight: "38%", boxSizing: "border-box" } : {}),
                         } as React.CSSProperties
                     }
                 >
@@ -961,13 +965,18 @@ function VideoNodeContent({ node, theme, onVideoDimensions }: NodeContentRendere
 
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
     const { t } = useTranslation();
-    if (!node.metadata?.content)
+    if (!node.metadata?.content) {
+        const loading = node.metadata?.status === "loading";
+        const progress = node.metadata?.stepProgress;
         return (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-2" style={{ color: theme.node.placeholder }}>
-                <Music2 className="size-7 opacity-35" />
-                <span className="text-sm">{t("canvas.node.emptyAudio")}</span>
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2" style={{ color: loading ? theme.node.activeStroke : theme.node.placeholder }}>
+                {loading ? <LoaderCircle className="size-7 animate-spin opacity-70" /> : <Music2 className="size-7 opacity-35" />}
+                <span className="text-sm">
+                    {loading ? `${t("canvas.node.generating")}${progress?.total ? ` ${progress.step}/${progress.total}` : ""}` : t("canvas.node.emptyAudio")}
+                </span>
             </div>
         );
+    }
     return (
         <div className="flex h-full w-full flex-col justify-center gap-3 px-4" style={{ background: theme.node.fill, color: theme.node.text }}>
             <div className="flex min-w-0 items-center gap-2 text-sm opacity-70">

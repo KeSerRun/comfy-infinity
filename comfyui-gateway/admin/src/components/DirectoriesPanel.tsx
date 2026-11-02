@@ -136,51 +136,45 @@ export function DirectoriesPanel({ onStatusChange }: Props) {
         <div className="settings-body">
           <div className="settings-group">
             <div className="settings-group-title">资源目录</div>
-            <div className="settings-row">
-              <div className="settings-label">
-                <label htmlFor="dirs-workflows">工作流目录</label>
-                <span>每行一个，可多个</span>
-              </div>
-              <div className="settings-control">
+            <div className="settings-grid">
+              <div className="settings-field">
+                <div className="field-head">
+                  <label htmlFor="dirs-workflows">工作流目录</label>
+                  {browse("workflows")}
+                </div>
                 <textarea
                   id="dirs-workflows"
-                  rows={2}
+                  rows={3}
                   placeholder={info?.auto?.workflowsDir ? `每行一个目录；自动识别：${info.auto.workflowsDir}` : "每行一个目录"}
                   value={workflowsDirs}
                   onChange={(event) => setWorkflowsDirs(event.target.value)}
                 />
+                <span className="field-hint">每行一个，可配置多个目录</span>
               </div>
-              {browse("workflows")}
-            </div>
-            <div className="settings-row">
-              <div className="settings-label">
-                <label htmlFor="dirs-models">模型目录</label>
-                <span>每行一个，可多个</span>
+              <div className="settings-field">
+                <div className="field-head">
+                  <label htmlFor="dirs-models">模型目录</label>
+                  {browse("model")}
+                </div>
+                <textarea id="dirs-models" rows={3} placeholder="每行一个目录" value={modelDirs} onChange={(event) => setModelDirs(event.target.value)} />
+                <span className="field-hint">包含 checkpoints、diffusion_models 等模型根目录</span>
               </div>
-              <div className="settings-control">
-                <textarea id="dirs-models" rows={2} placeholder="每行一个目录" value={modelDirs} onChange={(event) => setModelDirs(event.target.value)} />
+              <div className="settings-field">
+                <div className="field-head">
+                  <label htmlFor="dirs-lora">LoRA 目录</label>
+                  {browse("lora")}
+                </div>
+                <textarea id="dirs-lora" rows={3} placeholder="每行一个目录" value={loraDirs} onChange={(event) => setLoraDirs(event.target.value)} />
+                <span className="field-hint">每行一个，可配置多个 LoRA 目录</span>
               </div>
-              {browse("model")}
-            </div>
-            <div className="settings-row">
-              <div className="settings-label">
-                <label htmlFor="dirs-lora">LoRA 目录</label>
-                <span>每行一个，可多个</span>
+              <div className="settings-field">
+                <div className="field-head">
+                  <label htmlFor="dirs-nodes">插件目录</label>
+                  {browse("nodes")}
+                </div>
+                <textarea id="dirs-nodes" rows={3} placeholder="每行一个目录" value={customNodesDirs} onChange={(event) => setCustomNodesDirs(event.target.value)} />
+                <span className="field-hint">自定义节点根目录，保存后重新扫描</span>
               </div>
-              <div className="settings-control">
-                <textarea id="dirs-lora" rows={2} placeholder="每行一个目录" value={loraDirs} onChange={(event) => setLoraDirs(event.target.value)} />
-              </div>
-              {browse("lora")}
-            </div>
-            <div className="settings-row">
-              <div className="settings-label">
-                <label htmlFor="dirs-nodes">插件目录</label>
-                <span>自定义节点根目录</span>
-              </div>
-              <div className="settings-control">
-                <textarea id="dirs-nodes" rows={2} placeholder="每行一个目录" value={customNodesDirs} onChange={(event) => setCustomNodesDirs(event.target.value)} />
-              </div>
-              {browse("nodes")}
             </div>
           </div>
         </div>

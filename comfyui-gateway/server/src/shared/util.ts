@@ -78,6 +78,9 @@ export function mimeFromFilename(filename) {
   if (ext === ".png") return "image/png";
   if (ext === ".wav") return "audio/wav";
   if (ext === ".mp3") return "audio/mpeg";
+  if (ext === ".flac") return "audio/flac";
+  if (ext === ".opus") return "audio/ogg";
+  if (ext === ".aac") return "audio/aac";
   return "application/octet-stream";
 }
 
@@ -93,6 +96,9 @@ export function extFromMime(mimeType, filename = "", fallback = "bin") {
   if (mime === "image/gif") return "gif";
   if (mime === "audio/wav") return "wav";
   if (mime === "audio/mpeg") return "mp3";
+  if (mime === "audio/flac") return "flac";
+  if (mime === "audio/ogg") return "opus";
+  if (mime === "audio/aac") return "aac";
   return fallback;
 }
 

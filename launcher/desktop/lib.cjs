@@ -80,30 +80,12 @@ function nodeLaunchCommand(root, { execPath = process.execPath, platform = proce
   return { command: execPath, electronRunAsNode: true };
 }
 
-function isLoopbackHostname(hostname) {
-  return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(String(hostname || "").toLowerCase());
-}
-
-/** 判断一个 URL 是否指向启动器控制台（回环地址 + 控制端口）。 */
-function isConsoleUrl(rawUrl, controlPort) {
-  try {
-    const url = new URL(rawUrl);
-    if (!isLoopbackHostname(url.hostname)) return false;
-    const port = Number(url.port) || (url.protocol === "https:" ? 443 : 80);
-    return port === Number(controlPort);
-  } catch {
-    return false;
-  }
-}
-
 module.exports = {
   DEFAULT_CONTROL_PORT,
   DEFAULT_CANVAS_PORT,
   DEFAULT_GATEWAY_PORT,
   findRepoRoot,
-  isConsoleUrl,
   isFile,
-  isLoopbackHostname,
   nodeLaunchCommand,
   positivePort,
   readLauncherConfig,

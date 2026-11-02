@@ -1,12 +1,15 @@
 import axios from "axios";
+import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
+import { attachLocalCancel, attachLocalProgress } from "./image";
 import { runModelPlugin } from "./model-plugin";
 
 type RequestOptions = { signal?: AbortSignal };
+const AUDIO_REQUEST_TIMEOUT_MS = 10 * 60_000;
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -45,6 +48,9 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     }
     assertAudioConfig(requestConfig, model);
     const instructions = config.audioInstructions.trim();
+    const requestId = `aud_${nanoid()}`;
+    const detachCancel = attachLocalCancel(requestConfig, requestId, options?.signal);
+    const detachProgress = attachLocalProgress(requestConfig, requestId, options?.signal);
 
     try {
         const response = await axios.post<Blob>(
@@ -57,12 +63,20 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
                 speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
                 ...(instructions ? { instructions } : {}),
             },
-            { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
+            {
+                headers: { ...aiHeaders(requestConfig), ...(detachCancel ? { "X-Request-Id": requestId } : {}) },
+                responseType: "blob",
+                signal: options?.signal,
+                timeout: AUDIO_REQUEST_TIMEOUT_MS,
+            },
         );
         await assertAudioBlob(response.data);
         return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) });
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("audioGenerationFailed")));
+    } finally {
+        detachCancel?.();
+        detachProgress?.();
     }
 }
 

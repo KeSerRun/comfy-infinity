@@ -844,7 +844,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (config.imageMode === "outpaint" && config.outpaint) {
         const { left, top, right, bottom, width, height } = config.outpaint;
         // ComfyUI's ImageScaleToTotalPixels counts 1 MP as 1024², not 1e6.
-        const megapixels = Math.min(4, Math.max(0.1, (width * height) / (1024 * 1024)));
+        // Qwen Image 2.1 的扩图 KVCache 会随采样像素膨胀，默认封顶 1.5MP。
+        const megapixels = Math.min(1.5, Math.max(0.1, (width * height) / (1024 * 1024)));
         Object.assign(requestParams, { left, top, right, bottom, megapixels, outpaintWidth: width, outpaintHeight: height });
     }
     if (config.imageMode === "layout" && config.layout) {

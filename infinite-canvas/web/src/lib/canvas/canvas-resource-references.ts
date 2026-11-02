@@ -138,21 +138,25 @@ export function resolveCanvasBaseImage(
     return null;
 }
 
+function mergeResourceNodes(...groups: CanvasNodeData[][]) {
+    const merged = groups.flat();
+    return [...new Map(merged.map((node) => [node.id, node])).values()];
+}
+
 export function getMentionResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
     const configInputs = expandGroupResourceNodes(getConnectedConfigInputNodes(nodeId, nodes, connections), nodes);
-    if (configInputs.length) return configInputs;
     const ownInputs = expandGroupResourceNodes(getContextInputNodes(nodeId, nodes, connections), nodes);
-    if (ownInputs.length) return ownInputs;
+    // 配置卡和直接连接的参考可能同时存在；以前优先读配置卡会丢掉直接连过来的文本。
+    const inputs = mergeResourceNodes(configInputs, ownInputs);
+    if (inputs.length) return inputs;
     const node = nodes.find((item) => item.id === nodeId);
     return node && isResourceNode(node) ? [node] : [];
 }
 
 export function getGenerationResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
     const configInputs = getConnectedConfigInputNodes(nodeId, nodes, connections);
-    if (configInputs.length) return configInputs;
     const ownInputs = getContextInputNodes(nodeId, nodes, connections);
-    if (ownInputs.length) return ownInputs;
-    return [];
+    return mergeResourceNodes(configInputs, ownInputs);
 }
 
 function getContextInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
@@ -225,7 +229,7 @@ function resourceText(node: CanvasNodeData): string | undefined {
     if (node.type === CanvasNodeType.Text) {
         const texts = node.metadata?.texts || [];
         const primary = texts.find((text) => text.id === node.metadata?.primaryTextId) || texts[0];
-        return primary?.content || node.metadata?.content || node.metadata?.composerContent || node.metadata?.prompt;
+        return primary?.content || node.metadata?.content || node.metadata?.composerContent;
     }
     const resource = getNodeDefinition(node.type)?.resource?.(node);
     return resource?.kind === "text" ? resource.text : undefined;
@@ -235,7 +239,7 @@ function resourceKind(node: CanvasNodeData): CanvasResourceKind | null {
     if (node.type === CanvasNodeType.Image && node.metadata?.content) return "image";
     if (node.type === CanvasNodeType.Video && node.metadata?.content) return "video";
     if (node.type === CanvasNodeType.Audio && node.metadata?.content) return "audio";
-    if (node.type === CanvasNodeType.Text && (node.metadata?.content || node.metadata?.prompt || node.metadata?.composerContent || node.metadata?.texts?.some((text) => text.content))) return "text";
+    if (node.type === CanvasNodeType.Text && (node.metadata?.content || node.metadata?.composerContent || node.metadata?.texts?.some((text) => text.content))) return "text";
     // Plugin nodes declare their input eligibility through definition.resource.
     return getNodeDefinition(node.type)?.resource?.(node)?.kind || null;
 }

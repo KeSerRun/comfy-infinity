@@ -556,6 +556,34 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const { dir, file } = targetParts(resource.target);
         if (dir === "custom_nodes" && !root)
             return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
+        // llama-cpp_vllm 只认 ComfyUI 基础 models/LLM，不读 extra_model_paths；
+        // 因此 LLM 资源必须落在 targetPath 那一份目录，不能把别的模型根当成已安装。
+        if (dir === "LLM") {
+            let target = "";
+            try {
+                target = targetPath(resource, root);
+            }
+            catch {
+                target = "";
+            }
+            if (!target)
+                return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
+            if (resource.type === "dir") {
+                const present = isDir(target) && (isFile(path.join(target, "config.json")) || isFile(path.join(target, "model.safetensors")));
+                return { present, path: present ? target : "", rel: present && root ? path.relative(root, target) : target, size: 0, matchedBy: present ? "path" : "", mismatch: "" };
+            }
+            const present = isFile(target);
+            let size = 0;
+            if (present) {
+                try {
+                    size = fs.statSync(target).size;
+                }
+                catch {
+                    size = 0;
+                }
+            }
+            return { present, path: present ? target : "", rel: present && root ? path.relative(root, target) : target, size, matchedBy: present ? "path" : "", mismatch: "" };
+        }
         if (resource.type === "dir") {
             for (const base of modelRoots(dir, root)) {
                 const candidate = path.join(base, file);
@@ -1696,7 +1724,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 continue;
             }
             const type = String(resource.type || "model");
-            if (!["pip", "bake", "node"].includes(type))
+            if (!["pip", "bake", "node", "dir"].includes(type))
                 continue;
             const state = cachedResourceStatus(resource, comfyRoot());
             if (state.present)
@@ -1710,6 +1738,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 continue;
             }
             const blocked = state.missingRequires?.length ? `（先安装 ${state.missingRequires.join("、")}）` : "";
+            if (type === "dir") {
+                problems.push({
+                    type: "model",
+                    message: `缺少模型目录：${state.label}${blocked}`,
+                    resourceId: id,
+                });
+                continue;
+            }
             problems.push({
                 type: "runtime",
                 message: `缺少运行期依赖：${state.label}${blocked}`,
@@ -1728,6 +1764,17 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
         return problems;
     }
+    function workflowNodeResourceIds(workflowId) {
+        const entry = registry?.resolve?.(workflowId);
+        const classes = new Set(Object.values((entry?.workflow || {}))
+            .map((node) => String(node?.class_type || ""))
+            .filter(Boolean));
+        if (!classes.size)
+            return [];
+        return (index?.resources || [])
+            .filter((resource) => resource.type === "node" && Array.isArray(resource.provides) && resource.provides.some((classType) => classes.has(classType)))
+            .map((resource) => resource.id);
+    }
     function workflowDependencyIds(workflowId) {
         const ids = new Set();
         for (const pack of index?.packs || []) {
@@ -1736,7 +1783,18 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 for (const id of deps)
                     ids.add(id);
         }
+        // 工作流依赖不只模型和 pip；节点资源通过 provides 声明，修复时也要一并安装。
+        for (const id of workflowNodeResourceIds(workflowId))
+            ids.add(id);
         return [...ids];
+    }
+    // 节点目录存在不代表节点已成功加载；ComfyUI 报缺 class 时必须强制重装节点。
+    function nodeClassesPresent(resource) {
+        if (resource?.type !== "node" || !Array.isArray(resource.provides) || !resource.provides.length)
+            return true;
+        if (typeof setup?.hasNodeClass !== "function")
+            return true;
+        return resource.provides.every((classType) => setup.hasNodeClass(classType));
     }
     function canRepairWorkflow(workflowId) {
         return workflowDependencyIds(workflowId).length > 0;
@@ -1869,6 +1927,27 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             return;
         }
         const target = targetPath(resource, root);
+        // LLM 节点只读基础 models/LLM。若模型已经在另一个模型根里（例如用户手动放在 D 盘），
+        // 直接复制到目标目录，避免再次下载 5GB+ 权重。
+        const { dir: targetDir, file: targetFile } = targetParts(resource.target);
+        if (targetDir === "LLM" && resource.type !== "dir") {
+            const alternate = modelRoots(targetDir, root)
+                .map((base) => path.join(base, targetFile))
+                .find((candidate) => path.resolve(candidate) !== path.resolve(target) && isFile(candidate));
+            if (alternate) {
+                await fsp.mkdir(path.dirname(target), { recursive: true });
+                await fsp.copyFile(alternate, target);
+                const size = (await fsp.stat(target)).size;
+                lock.installed = lock.installed || {};
+                lock.installed[resource.id] = { version: index?.version || "", target: resource.target, sha256: resource.sha256 || "", size, installedAt: nowIso() };
+                lock.updatedAt = nowIso();
+                await saveLock();
+                jobItem.status = "done";
+                jobItem.source = "本机模型目录迁移";
+                jobItem.bytes = size;
+                return;
+            }
+        }
         const part = `${target}.part`;
         await fsp.mkdir(path.dirname(target), { recursive: true });
         const sources = normalizeSources(resource);
@@ -1985,12 +2064,12 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
         return "";
     }
-    async function installNode(resource, jobItem, signal) {
+    async function installNode(resource, jobItem, signal, force = false) {
         const root = comfyRoot();
         if (!root)
             throw new Error("未找到 ComfyUI 安装目录");
         const target = targetPath(resource, root);
-        if (isDir(target)) {
+        if (isDir(target) && !force) {
             jobItem.status = "skipped";
             jobItem.skipped = true;
             return;
@@ -2015,8 +2094,20 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 if (!sourceDir)
                     throw new Error("内置目录里没有找到 __init__.py");
                 await fsp.mkdir(path.dirname(target), { recursive: true });
-                if (!isDir(target))
+                const backup = path.join(installRoot, "backup");
+                let movedBackup = false;
+                if (isDir(target)) {
+                    await fsp.rename(target, backup);
+                    movedBackup = true;
+                }
+                try {
                     await fsp.rename(sourceDir, target);
+                }
+                catch (error) {
+                    if (movedBackup)
+                        await fsp.rename(backup, target).catch(() => { });
+                    throw error;
+                }
                 lock.installed = lock.installed || {};
                 lock.installed[resource.id] = { version: index?.version || "", target: resource.target, size: resource.size || 0, installedAt: nowIso() };
                 lock.updatedAt = nowIso();
@@ -2138,7 +2229,9 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             return;
         }
         const target = targetPath(resource, root);
-        const installRoot = path.join(root, ".canvas-install", `${resource.id}-${Date.now()}`);
+        // 暂存目录必须和目标同盘，否则 Windows 上 rename 会报 EXDEV；
+        // 模型目录和 canvas-install 不一定在同一个盘。
+        const installRoot = path.join(path.dirname(target), ".canvas-install", `${resource.id}-${Date.now()}`);
         const archive = path.join(installRoot, "payload.zip");
         const extract = path.join(installRoot, "extract");
         await fsp.mkdir(installRoot, { recursive: true });
@@ -2561,7 +2654,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             item.job = job;
             job.controllers.set(item.id, controller);
             try {
-                await installNode(resourceById(item.id), item, controller.signal);
+                await installNode(resourceById(item.id), item, controller.signal, Boolean(item.force));
             }
             catch (error) {
                 item.status = "error";
@@ -2689,9 +2782,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const root = comfyRoot();
         const missing = [];
         const skipped = [];
+        const forceNodeIds = new Set();
         for (const resource of selected) {
             const statusItem = resourceStatus(resource, root);
-            if (statusItem.status === "present")
+            const forceNode = resource.type === "node" && !nodeClassesPresent(resource);
+            if (statusItem.status === "present" && !forceNode)
                 continue;
             if (statusItem.status === "unsupported") {
                 skipped.push({ resource, reason: statusItem.unsupportedReason });
@@ -2700,6 +2795,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             if (resource.type === "bake" && statusItem.status === "blocked") {
                 // Dependencies are added by selectResources; keep the bake queued.
             }
+            if (forceNode)
+                forceNodeIds.add(resource.id);
             missing.push(resource);
         }
         const job = {
@@ -2719,6 +2816,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     source: null,
                     error: "",
                     skipped: false,
+                    force: forceNodeIds.has(resource.id),
                 })),
                 ...skipped.map(({ resource, reason }) => ({
                     id: resource.id,

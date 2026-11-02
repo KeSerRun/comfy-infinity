@@ -80,6 +80,12 @@ export function mimeFromFilename(filename) {
         return "audio/wav";
     if (ext === ".mp3")
         return "audio/mpeg";
+    if (ext === ".flac")
+        return "audio/flac";
+    if (ext === ".opus")
+        return "audio/ogg";
+    if (ext === ".aac")
+        return "audio/aac";
     return "application/octet-stream";
 }
 export function extFromMime(mimeType, filename = "", fallback = "bin") {
@@ -103,6 +109,12 @@ export function extFromMime(mimeType, filename = "", fallback = "bin") {
         return "wav";
     if (mime === "audio/mpeg")
         return "mp3";
+    if (mime === "audio/flac")
+        return "flac";
+    if (mime === "audio/ogg")
+        return "opus";
+    if (mime === "audio/aac")
+        return "aac";
     return fallback;
 }
 export function jsonError(message, { code, type, details } = {}) {

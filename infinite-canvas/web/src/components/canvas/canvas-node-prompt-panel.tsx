@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { BaseModelPicker, ModelPicker, WorkflowModelPicker } from "@/components/model-picker";
 import { GATEWAY_ADMIN_URL } from "@/constant/app-mode";
-import { channelModelOf, defaultConfig, modelImageInputs, modelOptionName, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { channelModelOf, defaultConfig, modelCapabilityOf, modelImageInputs, modelOptionName, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -520,7 +520,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         </>
                     ) : mode === "audio" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="audio" onMissingConfig={warnMissingWorkflow} className="max-w-[190px]" />
+                            <ModelPicker config={config} value={node.metadata?.model && modelCapabilityOf(config, node.metadata.model) === "audio" ? node.metadata.model : config.audioModel} onChange={(model) => onConfigChange(node.id, { model })} capability="audio" onMissingConfig={warnMissingWorkflow} className="max-w-[190px]" />
                             <CanvasAudioSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, audioConfigPatch(key, value))} />
                         </>
                     ) : (

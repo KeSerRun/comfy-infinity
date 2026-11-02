@@ -3035,6 +3035,119 @@
           "SinoXvision_Krea2_Aesthetics_fp8_scale.safetensors": "aesthetics"
         }
       }
+    },
+    {
+      "id": "text-image-caption-qwen35",
+      "name": "text-image-caption-qwen35",
+      "type": "text",
+      "label": "图片反推提示词 · Qwen3.5-9B",
+      "file": "text-image-caption-qwen35.json",
+      "description": "输入一张参考图，输出可直接用于生图的中文提示词；使用 Qwen3.5-9B GGUF + mmproj，本地运行。",
+      "bindings": {
+        "image": {
+          "node": "1",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0
+        },
+        "instruction": {
+          "node": "3",
+          "input": "custom_prompt",
+          "from": "params.instruction",
+          "default": "请把这张图片反推成可直接用于 AI 生图的中文提示词。"
+        }
+      }
+    },
+    {
+      "id": "text-image-caption-florence",
+      "name": "text-image-caption-florence",
+      "type": "text",
+      "label": "图片反推提示词 · Florence-2",
+      "file": "text-image-caption-florence.json",
+      "description": "输入一张参考图，输出生图提示词；使用 Florence-2 PromptGen v2.0，速度快、显存占用低。",
+      "bindings": {
+        "image": {
+          "node": "1",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0
+        }
+      }
+    },
+    {
+      "id": "audio-ace-step-15",
+      "name": "audio-ace-step-15",
+      "type": "audio",
+      "label": "ACE-Step 1.5 文生音乐",
+      "file": "audio-ace-step-15.json",
+      "description": "ACE-Step 1.5 Turbo 文生音乐/音效：支持 tags、歌词、BPM、时长和调式，默认 30 秒、8 步。",
+      "bindings": {
+        "prompt": {
+          "node": "6",
+          "input": "tags"
+        },
+        "lyrics": {
+          "node": "6",
+          "input": "lyrics",
+          "from": "params.lyrics",
+          "default": ""
+        },
+        "seconds": {
+          "node": "5",
+          "input": "seconds",
+          "from": "seconds",
+          "default": 30
+        },
+        "duration": {
+          "node": "6",
+          "input": "duration",
+          "from": "seconds",
+          "default": 30
+        },
+        "seed": {
+          "node": "8",
+          "input": "seed",
+          "random": true
+        },
+        "bpm": {
+          "node": "6",
+          "input": "bpm",
+          "from": "params.bpm",
+          "transform": "int",
+          "default": 190
+        },
+        "timesignature": {
+          "node": "6",
+          "input": "timesignature",
+          "from": "params.timesignature",
+          "default": "4"
+        },
+        "language": {
+          "node": "6",
+          "input": "language",
+          "from": "params.language",
+          "default": "en"
+        },
+        "keyscale": {
+          "node": "6",
+          "input": "keyscale",
+          "from": "params.keyscale",
+          "default": "E minor"
+        },
+        "generate_audio_codes": {
+          "node": "6",
+          "input": "generate_audio_codes",
+          "from": "params.generate_audio_codes",
+          "default": true
+        }
+      },
+      "defaults": {
+        "6.bpm": 190,
+        "6.duration": 30,
+        "6.timesignature": "4",
+        "6.language": "en",
+        "6.keyscale": "E minor"
+      }
     }
   ]
 }

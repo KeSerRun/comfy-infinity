@@ -39,6 +39,7 @@ let pendingShellRequest = null;
 let consoleLoading = false;
 let restartBusy = false;
 let quitting = false;
+let closeConfirmOpen = false;
 
 /* --------------------------------------------------------------- 控制接口 */
 
@@ -153,6 +154,44 @@ function initialMainWindowSize() {
   }
 }
 
+async function showNativeQuitConfirm() {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+  try {
+    const result = await dialog.showMessageBox(win, {
+      type: "question",
+      title: "退出 Comfy Infinity",
+      message: "确定要退出 Comfy Infinity 吗？",
+      detail: "退出后控制台、画布和模型服务都会停止。",
+      buttons: ["退出", "取消"],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (result.response === 0) app.quit();
+  } catch (error) {
+    console.error(`[desktop] 关闭确认失败：${error.message}`);
+  }
+}
+
+function confirmQuitFromWindow() {
+  if (closeConfirmOpen || quitting) return;
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+  closeConfirmOpen = true;
+  // 外壳已加载时使用站内弹窗，避免 Windows 原生消息框与软件视觉割裂。
+  if (shellReady) {
+    try {
+      win.webContents.send("quit-confirm-request");
+      return;
+    } catch (error) {
+      console.error(`[desktop] 打开退出确认弹窗失败：${error.message}`);
+    }
+  }
+  closeConfirmOpen = false;
+  void showNativeQuitConfirm();
+}
+
 function createMainWindow() {
   shellReady = false;
   const shellUrl = new URL(pathToFileURL(path.join(__dirname, "shell.html")).toString());
@@ -222,21 +261,32 @@ function createMainWindow() {
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("close", (event) => {
-    // 关闭窗口 = 最小化到托盘；退出走托盘菜单或系统退出。
+    // 关闭按钮先确认；确认后交给 before-quit 统一关停服务。
     if (quitting) return;
     event.preventDefault();
-    mainWindow.hide();
+    confirmQuitFromWindow();
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
     shellReady = false;
     pendingShellRequest = null;
+    closeConfirmOpen = false;
   });
   void mainWindow.loadURL(shellUrl.toString());
 }
 
 ipcMain.on("open-external", (_event, url) => {
   if (typeof url === "string") routeExternalUrl(url);
+});
+
+ipcMain.on("quit-confirmed", () => {
+  if (!closeConfirmOpen) return;
+  closeConfirmOpen = false;
+  app.quit();
+});
+
+ipcMain.on("quit-cancelled", () => {
+  closeConfirmOpen = false;
 });
 
 ipcMain.on("window-theme", (event, theme) => {

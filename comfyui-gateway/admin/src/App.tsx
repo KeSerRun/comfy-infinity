@@ -149,13 +149,17 @@ export default function App() {
     <ConfigProvider
       theme={{
         algorithm: theme === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-        token: { fontFamily: FONT_SANS },
+        token: {
+          fontFamily: FONT_SANS,
+          fontSize: 14,
+          controlHeight: 36,
+          borderRadius: 8,
+        },
       }}
       button={{ autoInsertSpace: false }}
     >
       <>
         <header className="top">
-          <div aria-hidden="true" />
           <nav className="tabs" role="tablist" aria-label="管理页面">
             {TAB_NAMES.map((name) => (
               <button

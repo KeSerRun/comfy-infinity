@@ -105,7 +105,7 @@ function collectOutputFiles(history, { includePreview = false }: any = {}) {
   const files = [];
   const seen = new Set();
   for (const [nodeId, output] of Object.entries((history?.outputs || {}) as Record<string, any>)) {
-    for (const key of ["images", "gifs", "videos"]) {
+    for (const key of ["images", "gifs", "videos", "audio", "audios"]) {
       for (const item of output?.[key] || []) {
         if (!item?.filename) continue;
         if (item.type && item.type !== "output" && !(includePreview && item.type === "temp")) continue;

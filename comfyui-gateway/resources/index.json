@@ -442,7 +442,10 @@
         "prompt_qwen_mmproj",
         "prompt_florence_model"
       ],
-      "workflows": [],
+      "workflows": [
+        "text-image-caption-qwen35",
+        "text-image-caption-florence"
+      ],
       "optionalResources": [
         "prompt_llama_python",
         "prompt_qwen_gguf",
@@ -450,7 +453,16 @@
         "prompt_florence_model"
       ],
       "optionalLabel": "本地反推 / 本地提示词",
-      "workflowDependencies": {},
+      "workflowDependencies": {
+        "text-image-caption-qwen35": [
+          "prompt_qwen_gguf",
+          "prompt_qwen_mmproj",
+          "prompt_llama_python"
+        ],
+        "text-image-caption-florence": [
+          "prompt_florence_model"
+        ]
+      },
       "family": "prompt",
       "tier": "core"
     },
@@ -525,6 +537,44 @@
           "seedvr2_dep_opencv",
           "seedvr2_dep_einops"
         ]
+      }
+    },
+    {
+      "id": "audio",
+      "label": "ACE-Step 音乐",
+      "description": "ACE-Step 1.5 Turbo 文生音乐/音效，支持 tags、歌词、BPM 和时长；使用 ComfyUI 内置 ACE 节点，无需额外插件。",
+      "resources": [
+        "ace15_turbo_unet",
+        "ace15_te_qwen06b",
+        "ace15_te_qwen4b",
+        "ace15_vae"
+      ],
+      "workflows": [
+        "audio-ace-step-15"
+      ],
+      "optionalResources": [
+        "ace15_turbo_unet",
+        "ace15_te_qwen06b",
+        "ace15_te_qwen4b",
+        "ace15_vae"
+      ],
+      "workflowDependencies": {
+        "audio-ace-step-15": [
+          "ace15_turbo_unet",
+          "ace15_te_qwen06b",
+          "ace15_te_qwen4b",
+          "ace15_vae"
+        ]
+      },
+      "family": "audio",
+      "tier": "utility",
+      "optional": true,
+      "autoRecommend": false,
+      "requirements": {
+        "vramFloorGb": 8,
+        "weightsGb": 15,
+        "ramBaseGb": 16,
+        "recommendVramGb": 12
       }
     }
   ],
@@ -1722,6 +1772,62 @@
           "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/upscale_models/RealESRGAN_x4plus.pth",
           "label": "魔搭镜像"
         }
+      ]
+    },
+    {
+      "id": "ace15_turbo_unet",
+      "type": "model",
+      "label": "ACE-Step 1.5 Turbo UNet",
+      "target": "diffusion_models/acestep_v1.5_turbo.safetensors",
+      "size": 4787825604,
+      "sha256": "3f6e0797fad420a39bd33979eb6e840e30989e34a3794e843d23b60ec6e422d7",
+      "license": "Apache-2.0",
+      "note": "ACE-Step 1.5 文生音乐主模型。",
+      "sources": [
+        "https://huggingface.co/Comfy-Org/ACE-Step-1.5/resolve/main/split_files/diffusion_models/acestep_v1.5_turbo.safetensors",
+        "https://hf-mirror.com/Comfy-Org/ACE-Step-1.5/resolve/main/split_files/diffusion_models/acestep_v1.5_turbo.safetensors"
+      ]
+    },
+    {
+      "id": "ace15_te_qwen06b",
+      "type": "model",
+      "label": "ACE-Step 1.5 Qwen 0.6B 文本编码器",
+      "target": "text_encoders/qwen_0.6b_ace15.safetensors",
+      "size": 1191588248,
+      "sha256": "fd4590c82153b8ddb67e15a2e7aaa8afa8b83a858c8a9b82a4831063156aa7a7",
+      "license": "Apache-2.0",
+      "note": "ACE-Step 1.5 文本编码器 1/2。",
+      "sources": [
+        "https://huggingface.co/Comfy-Org/ACE-Step-1.5/resolve/main/split_files/text_encoders/qwen_0.6b_ace15.safetensors",
+        "https://hf-mirror.com/Comfy-Org/ACE-Step-1.5/resolve/main/split_files/text_encoders/qwen_0.6b_ace15.safetensors"
+      ]
+    },
+    {
+      "id": "ace15_te_qwen4b",
+      "type": "model",
+      "label": "ACE-Step 1.5 Qwen 4B 文本编码器",
+      "target": "text_encoders/qwen_4b_ace15.safetensors",
+      "size": 8379154232,
+      "sha256": "ffe5ffb855086c2ab55e467e9859fb01894781020a0376484dd19de166b79873",
+      "license": "Apache-2.0",
+      "note": "ACE-Step 1.5 文本编码器 2/2。",
+      "sources": [
+        "https://huggingface.co/Comfy-Org/ACE-Step-1.5/resolve/main/split_files/text_encoders/qwen_4b_ace15.safetensors",
+        "https://hf-mirror.com/Comfy-Org/ACE-Step-1.5/resolve/main/split_files/text_encoders/qwen_4b_ace15.safetensors"
+      ]
+    },
+    {
+      "id": "ace15_vae",
+      "type": "model",
+      "label": "ACE-Step 1.5 音频 VAE",
+      "target": "vae/ace_1.5_vae.safetensors",
+      "size": 337431732,
+      "sha256": "6de92e3a862acd287e08b024ac90f0783a8635451b728721a33ff03565bcb2bb",
+      "license": "Apache-2.0",
+      "note": "ACE-Step 1.5 音频 VAE。",
+      "sources": [
+        "https://huggingface.co/Comfy-Org/ACE-Step-1.5/resolve/main/split_files/vae/ace_1.5_vae.safetensors",
+        "https://hf-mirror.com/Comfy-Org/ACE-Step-1.5/resolve/main/split_files/vae/ace_1.5_vae.safetensors"
       ]
     }
   ]

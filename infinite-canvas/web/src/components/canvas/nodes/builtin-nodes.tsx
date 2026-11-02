@@ -13,7 +13,11 @@ function builtinResource(node: CanvasNodeData): CanvasNodeResource | null {
     if (node.type === CanvasNodeType.Image && node.metadata?.content) return { kind: "image", url: node.metadata.content };
     if (node.type === CanvasNodeType.Video && node.metadata?.content) return { kind: "video", url: node.metadata.content };
     if (node.type === CanvasNodeType.Audio && node.metadata?.content) return { kind: "audio", url: node.metadata.content };
-    if (node.type === CanvasNodeType.Text && (node.metadata?.content || node.metadata?.prompt)) return { kind: "text", text: node.metadata.content || node.metadata.prompt };
+    if (node.type === CanvasNodeType.Text && (node.metadata?.content || node.metadata?.composerContent || node.metadata?.texts?.some((text) => text.content))) {
+        const texts = node.metadata?.texts || [];
+        const primary = texts.find((text) => text.id === node.metadata?.primaryTextId) || texts[0];
+        return { kind: "text", text: primary?.content || node.metadata.content || node.metadata.composerContent };
+    }
     return null;
 }
 

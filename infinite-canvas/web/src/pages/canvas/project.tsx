@@ -332,7 +332,7 @@ function InfiniteCanvasPage() {
         [cleanupAssetImages],
     );
 
-    const startGenerationRequest = useCallback((targetNodeId: string, originNodeId: string, runningId = originNodeId, controller = new AbortController(), expectedProgressCount = 1) => {
+    const startGenerationRequest = useCallback((targetNodeId: string, originNodeId: string, runningId = originNodeId, controller = new AbortController(), expectedProgressCount = 1, holdAtLastStep = false) => {
         const previous = generationRequestsRef.current.get(targetNodeId);
         if (previous?.controller !== controller) previous?.controller.abort("user-stop");
         const pendingClear = generationStepTimersRef.current.get(targetNodeId);
@@ -353,7 +353,9 @@ function InfiniteCanvasPage() {
             const completed = values.filter((item) => item.step >= item.total).length;
             const active = values.filter((item) => item.step < item.total).reduce((max, item) => Math.max(max, item.step), 0);
             const total = perTotal * count;
-            const step = Math.min(total, completed * perTotal + active);
+            let step = Math.min(total, completed * perTotal + active);
+            // 音频采样完成后还有 VAE 解码和 MP3 写入；停在一格，等文件真正返回再收尾。
+            if (holdAtLastStep && values.every((item) => item.step >= item.total)) step = Math.max(0, total - 1);
             setNodes((prev) => prev.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, stepProgress: { step, total } } } : item)));
         });
         generationRequestsRef.current.set(targetNodeId, { targetNodeId, originNodeId, runningNodeId: runningId, controller });
@@ -3069,7 +3071,7 @@ function InfiniteCanvasPage() {
                             : [...prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS } } : node)), audioNode],
                     );
                     if (!reuseAudioNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: audioId }]);
-                    const controller = startGenerationRequest(audioId, nodeId, nodeId, runController);
+                    const controller = startGenerationRequest(audioId, nodeId, nodeId, runController, 1, true);
                     try {
                         const audio = await storeGeneratedAudio(await requestAudioGeneration(generationConfig, effectivePrompt, { signal: controller.signal }), generationConfig.audioFormat);
                         setNodes((prev) => prev.map((node) => (node.id === audioId ? { ...node, metadata: { ...node.metadata, ...audioMetadata(audio), prompt: effectivePrompt, ...buildAudioGenerationMetadata(generationConfig) } } : node)));
@@ -3272,7 +3274,7 @@ function InfiniteCanvasPage() {
 
             setRunningNodeId(node.id);
             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, images: item.metadata?.images?.map((image) => (image.id === imageId ? { ...image, status: NODE_STATUS_LOADING, errorDetails: undefined } : image)) } } : item)));
-            const controller = startGenerationRequest(node.id, sourceNode.id, node.id);
+            const controller = startGenerationRequest(node.id, sourceNode.id, node.id, undefined, 1, node.type === CanvasNodeType.Audio);
 
             try {
                 if (node.type === CanvasNodeType.Text) {

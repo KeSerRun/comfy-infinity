@@ -12,11 +12,15 @@
       color-scheme: dark;
       --bg:#0b0d12; --bar:#11151d; --line:#252b38; --fg:#e8ecf3;
       --muted:#8993a6; --hover:#1a202b; --active:#2b3342;
+      --danger:#e05a5a; --danger-hover:#ec6a6a; --danger-soft:rgba(224,90,90,.13);
+      --scrim:rgba(4,6,10,.62); --dialog-shadow:0 24px 72px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.22);
     }
     :root[data-theme="light"] {
       color-scheme: light;
       --bg:#f6f4f0; --bar:#fffdfa; --line:#e2dcd2; --fg:#211d19;
       --muted:#5d564d; --hover:#f4f1ea; --active:#ebe6dd;
+      --danger:#c74444; --danger-hover:#b73737; --danger-soft:rgba(199,68,68,.09);
+      --scrim:rgba(35,30,24,.32); --dialog-shadow:0 24px 64px rgba(48,39,28,.2), 0 2px 8px rgba(48,39,28,.1);
     }
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--fg); font: 13px/1.4 "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; }
@@ -62,6 +66,48 @@
       background: var(--hover); color: var(--fg); cursor: pointer; font: inherit;
     }
     .offline-actions button:hover { border-color: var(--muted); }
+
+    .quit-overlay {
+      position: fixed; inset: 0; z-index: 1000;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px; background: var(--scrim);
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      opacity: 0; transition: opacity .16s ease;
+    }
+    .quit-overlay[hidden] { display: none; }
+    .quit-overlay.visible { opacity: 1; }
+    .quit-dialog {
+      width: min(460px, 100%); padding: 24px;
+      border: 1px solid var(--line); border-radius: 16px;
+      background: var(--bar); box-shadow: var(--dialog-shadow);
+      transform: translateY(10px) scale(.98);
+      transition: transform .18s cubic-bezier(.2,.8,.2,1);
+    }
+    .quit-overlay.visible .quit-dialog { transform: none; }
+    .quit-head { display: flex; align-items: flex-start; gap: 14px; }
+    .quit-mark {
+      display: grid; place-items: center; flex: none;
+      width: 42px; height: 42px; border-radius: 12px;
+      color: var(--danger); background: var(--danger-soft);
+      border: 1px solid color-mix(in srgb, var(--danger) 26%, transparent);
+    }
+    .quit-mark svg { width: 20px; height: 20px; }
+    .quit-copy { min-width: 0; }
+    .quit-title { margin: 0; color: var(--fg); font-size: 18px; font-weight: 600; line-height: 1.35; }
+    .quit-desc { margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+    .quit-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; -webkit-app-region: no-drag; }
+    .quit-actions button {
+      min-width: 84px; height: 36px; padding: 0 16px;
+      border: 1px solid var(--line); border-radius: 9px;
+      background: transparent; color: var(--fg);
+      cursor: pointer; font: inherit; font-weight: 500;
+      transition: background .15s ease, border-color .15s ease, color .15s ease;
+    }
+    .quit-actions button:focus-visible { outline: 2px solid color-mix(in srgb, var(--fg) 40%, transparent); outline-offset: 2px; }
+    .quit-actions .quit-cancel { background: var(--hover); }
+    .quit-actions .quit-cancel:hover { border-color: var(--muted); background: var(--active); }
+    .quit-actions .quit-confirm { border-color: transparent; background: var(--danger); color: #fff; }
+    .quit-actions .quit-confirm:hover { background: var(--danger-hover); }
   </style>
 </head>
 <body>
@@ -115,6 +161,26 @@
       </div>
     </section>
   </main>
+  <div class="quit-overlay" id="quitOverlay" hidden>
+    <div class="quit-dialog" role="alertdialog" aria-modal="true" aria-labelledby="quitTitle" aria-describedby="quitDesc">
+      <div class="quit-head">
+        <div class="quit-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v9" />
+            <path d="M6.4 6.4a8 8 0 1 0 11.2 0" />
+          </svg>
+        </div>
+        <div class="quit-copy">
+          <h2 class="quit-title" id="quitTitle">退出 Comfy Infinity？</h2>
+          <p class="quit-desc" id="quitDesc">退出后控制台、画布和模型服务都会停止。确定要关闭工作台吗？</p>
+        </div>
+      </div>
+      <div class="quit-actions">
+        <button type="button" class="quit-cancel" id="quitCancel">取消</button>
+        <button type="button" class="quit-confirm" id="quitConfirm">退出</button>
+      </div>
+    </div>
+  </div>
   <script>
     const params = new URLSearchParams(location.search);
     const urls = {
@@ -313,6 +379,55 @@
     document.querySelectorAll("[data-console]").forEach((button) => {
       button.addEventListener("click", () => show("console"));
     });
+
+    const quitOverlay = document.getElementById("quitOverlay");
+    const quitCancel = document.getElementById("quitCancel");
+    const quitConfirm = document.getElementById("quitConfirm");
+    let quitHideTimer = 0;
+
+    function showQuitDialog() {
+      window.clearTimeout(quitHideTimer);
+      quitOverlay.hidden = false;
+      requestAnimationFrame(() => {
+        quitOverlay.classList.add("visible");
+        quitCancel.focus({ preventScroll: true });
+      });
+    }
+
+    function hideQuitDialog(notifyMain = true) {
+      quitOverlay.classList.remove("visible");
+      window.clearTimeout(quitHideTimer);
+      quitHideTimer = window.setTimeout(() => {
+        if (!quitOverlay.classList.contains("visible")) quitOverlay.hidden = true;
+      }, 180);
+      if (notifyMain) window.comfyWindow?.cancelQuit();
+    }
+
+    quitCancel.addEventListener("click", () => hideQuitDialog());
+    quitConfirm.addEventListener("click", () => {
+      window.clearTimeout(quitHideTimer);
+      quitOverlay.classList.remove("visible");
+      quitOverlay.hidden = true;
+      window.comfyWindow?.confirmQuit();
+    });
+    quitOverlay.addEventListener("click", (event) => {
+      if (event.target === quitOverlay) hideQuitDialog();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (quitOverlay.hidden) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        hideQuitDialog();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [quitCancel, quitConfirm];
+      const index = focusable.indexOf(document.activeElement);
+      const next = event.shiftKey ? (index <= 0 ? focusable.length - 1 : index - 1) : (index + 1) % focusable.length;
+      event.preventDefault();
+      focusable[next].focus({ preventScroll: true });
+    });
+    window.comfyWindow?.onQuitRequest?.(showQuitDialog);
 
     for (const [name, view] of Object.entries(views)) {
       view.addEventListener("ipc-message", (event) => {

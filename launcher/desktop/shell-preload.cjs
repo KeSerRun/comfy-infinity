@@ -11,4 +11,16 @@ contextBridge.exposeInMainWorld("comfyWindow", {
       ipcRenderer.send("open-external", url);
     }
   },
+  onQuitRequest(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = () => callback();
+    ipcRenderer.on("quit-confirm-request", listener);
+    return () => ipcRenderer.removeListener("quit-confirm-request", listener);
+  },
+  confirmQuit() {
+    ipcRenderer.send("quit-confirmed");
+  },
+  cancelQuit() {
+    ipcRenderer.send("quit-cancelled");
+  },
 });

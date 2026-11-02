@@ -33,12 +33,14 @@ Infinite Canvas :3000
 
 ## 工作流
 
-管理页会直接列出 `workflows/` 顶层以及已选 ComfyUI 工作流目录中的 JSON 文件，不再有导入或注册接口。`workflows/registry.json` 仅作为内置工作流的绑定/参数元数据，不会被管理页写入。工作流表格支持搜索、每页 5 条分页，以及每行的「修复」按钮：点击后通过桥接扩展在 ComfyUI 中打开该工作流，便于补齐缺失模型或节点。
+管理页会直接列出 `workflows/` 顶层以及已选 ComfyUI 工作流目录中的 JSON 文件，不再有导入或注册接口。`workflows/registry.json` 仅作为内置工作流的绑定/参数元数据，不会被管理页写入。工作流表格支持搜索、每页 5 条分页，以及每行的「修复」按钮：点击后会安装工作流缺失的模型、运行库和节点。
 
-`workflows/registry.json` 当前包含 12 个条目，分为：
+`workflows/registry.json` 当前包含 23 个条目，分为：
 
 - 图像生成：Z-Image Turbo、Krea2 Aesthetics、MOSS SFT 8 步 / 50 步、Qwen Image 2.1（edit / inpaint / outpaint）。
-- 视频：MiniMax-H3 文生、首尾帧、多参三个入口，共用文戏均衡工作流。
+- 视频：MiniMax-H3 文生、首尾帧、多参、角色替换。
+- 文本：参考图反推提示词（Qwen3.5-9B / Florence-2）。
+- 音频：ACE-Step 1.5 文生音乐。
 - 放大/超分：ESRGAN、SeedVR2 图片、SeedVR2 视频。
 - 自动发现的诊断工作流标记为 hidden，不进入 `/v1/models`。
 

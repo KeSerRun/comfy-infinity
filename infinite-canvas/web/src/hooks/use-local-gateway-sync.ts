@@ -9,7 +9,7 @@ const REQUEST_TIMEOUT_MS = 4000;
 
 function syncableCapability(name: string): ModelCapability | null {
     const capability = guessCapability(name);
-    return capability === "image" || capability === "video" ? capability : null;
+    return capability === "image" || capability === "video" || capability === "audio" ? capability : null;
 }
 
 /** 本地模式下自动从网关同步模型；网关新增/删除工作流后无需手动刷新渠道。 */
@@ -44,7 +44,7 @@ export function useLocalGatewaySync() {
                     .map((item) => {
                         const name = String(item.id || "").trim();
                         const meta = item.metadata || {};
-                        const capability = meta.type === "image" || meta.type === "video" ? meta.type : syncableCapability(name);
+                        const capability = meta.type === "image" || meta.type === "video" || meta.type === "audio" ? meta.type : syncableCapability(name);
                         return {
                             name,
                             capability,
@@ -81,6 +81,9 @@ export function useLocalGatewaySync() {
                             const videoOptions = channels.flatMap((item) =>
                                 item.models.filter((model) => model.capability === "video").map((model) => encodeChannelModel(item.id, model.name)),
                             );
+                            const audioOptions = channels.flatMap((item) =>
+                                item.models.filter((model) => model.capability === "audio").map((model) => encodeChannelModel(item.id, model.name)),
+                            );
                             const pick = (current: string, options: string[]) => (options.includes(current) ? current : options[0] || "");
                             const pickImage = (current: string) => {
                                 if (imageOptions.includes(current)) return current;
@@ -97,6 +100,7 @@ export function useLocalGatewaySync() {
                                     models: modelOptionsFromChannels(channels),
                                     imageModel: pickImage(config.imageModel),
                                     videoModel: pick(config.videoModel, videoOptions),
+                                    audioModel: pick(config.audioModel, audioOptions),
                                     model: pickImage(config.model),
                                     baseUrl: LOCAL_GATEWAY_BASE_URL,
                                     apiKey: channel.apiKey || "local",
@@ -119,6 +123,7 @@ export function useLocalGatewaySync() {
                                 models: modelOptionsFromChannels(channels),
                                 imageModel: "",
                                 videoModel: "",
+                                audioModel: "",
                                 model: "",
                                 baseUrl: LOCAL_GATEWAY_BASE_URL,
                                 apiKey: channel.apiKey || "local",
