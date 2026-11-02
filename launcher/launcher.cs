@@ -75,9 +75,12 @@ internal static class Program
 
     private sealed class InstallForm : Form
     {
+        private const long ExpectedBytes = 600L * 1024 * 1024;
         private readonly string root;
         private readonly string batch;
         private readonly Label statusLabel;
+        private readonly ProgressBar progressBar;
+        private readonly System.Windows.Forms.Timer progressTimer;
 
         internal InstallForm(string root, string batch)
         {
@@ -121,10 +124,12 @@ internal static class Program
                 Size = new Size(360, 24)
             };
 
-            ProgressBar progress = new ProgressBar
+            progressBar = new ProgressBar
             {
-                Style = ProgressBarStyle.Marquee,
-                MarqueeAnimationSpeed = 28,
+                Style = ProgressBarStyle.Continuous,
+                Minimum = 0,
+                Maximum = 100,
+                Value = 0,
                 Location = new Point(30, 96),
                 Size = new Size(360, 12)
             };
@@ -140,16 +145,54 @@ internal static class Program
 
             Controls.Add(title);
             Controls.Add(statusLabel);
-            Controls.Add(progress);
+            Controls.Add(progressBar);
             Controls.Add(hint);
+
+            progressTimer = new System.Windows.Forms.Timer { Interval = 700 };
+            progressTimer.Tick += UpdateProgress;
             Shown += OnShown;
         }
 
         private void OnShown(object sender, EventArgs e)
         {
+            progressTimer.Start();
             Thread worker = new Thread(RunInstall);
             worker.IsBackground = true;
             worker.Start();
+        }
+
+        private void UpdateProgress(object sender, EventArgs e)
+        {
+            long bytes = DirectorySize(Path.Combine(root, "launcher", "desktop", "node_modules"));
+            int percent = (int)Math.Min(96, bytes * 100 / ExpectedBytes);
+            if (percent > progressBar.Value) progressBar.Value = percent;
+            statusLabel.Text = bytes > 0
+                ? "正在下载并准备桌面运行资源… " + percent + "%（已写入 " + (bytes / (1024.0 * 1024.0)).ToString("0.0") + " MB）"
+                : "正在下载并准备桌面运行资源…";
+        }
+
+        private static long DirectorySize(string directory)
+        {
+            long total = 0;
+            try
+            {
+                foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        total += new FileInfo(file).Length;
+                    }
+                    catch
+                    {
+                        // 文件可能正在被 npm 写入，跳过当前项。
+                    }
+                }
+            }
+            catch
+            {
+                // 目录尚不存在或暂时不可读取。
+            }
+            return total;
         }
 
         private void RunInstall()
@@ -172,11 +215,21 @@ internal static class Program
             {
                 BeginInvoke(new Action(() =>
                 {
+                    progressTimer.Stop();
                     MessageBox.Show(
                         failure,
                         "Comfy Infinity",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Error);
+                }));
+            }
+            else
+            {
+                BeginInvoke(new Action(() =>
+                {
+                    progressTimer.Stop();
+                    progressBar.Value = 100;
+                    statusLabel.Text = "资源准备完成，正在启动工作台… 100%";
                 }));
             }
             BeginInvoke(new Action(Close));
