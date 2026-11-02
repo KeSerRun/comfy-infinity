@@ -7,10 +7,11 @@ if (-not (Test-Path $csc)) {
     throw "C# compiler not found"
 }
 
-& $csc /nologo /target:winexe /platform:anycpu `
+& $csc /nologo /codepage:65001 /target:winexe /platform:anycpu `
     "/win32icon:$root\launcher\app-icon.ico" `
     "/out:$root\ComfyInfinity.exe" `
     "/r:System.Windows.Forms.dll" `
+    "/r:System.Drawing.dll" `
     "$root\launcher\launcher.cs"
 if ($LASTEXITCODE -ne 0) {
     throw "launcher build failed"

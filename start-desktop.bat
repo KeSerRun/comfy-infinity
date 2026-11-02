@@ -7,7 +7,6 @@ if not exist "node_modules\electron\dist\electron.exe" (
   call npm install
   if errorlevel 1 (
     echo [Comfy Infinity] Dependency installation failed. Please check npm and your network, then try again.
-    pause
     exit /b 1
   )
 )
