@@ -191,6 +191,7 @@ function applyComfyDir(cfg, dir) {
   persistDiscovery(cfg);
   state.comfyStartError = "";
   const plan = resolveLaunchPlan(info);
+  state.comfyNeedsPath = !info || !plan;
   return { comfyDir: cfg.comfyDir, workflowsDir: cfg.comfyWorkflowsDir, detected: Boolean(info), plan };
 }
 
@@ -1015,6 +1016,7 @@ const state = {
   controlServer: null,
   restarting: false,
   comfyStartError: "",
+  comfyNeedsPath: false,
   starting: { comfy: false, gateway: false, canvas: false },
 };
 
@@ -1445,6 +1447,7 @@ async function collectStatus(cfg) {
       comfy: {
         reachable: Boolean(comfyReachable),
         starting: state.starting.comfy,
+        needsPath: state.comfyNeedsPath,
         startError: state.comfyStartError,
         url: comfyUrl,
         managed: Boolean(state.comfyChild),
@@ -1521,6 +1524,11 @@ function stopGatewayProcess() {
 }
 
 async function startComfyProcess(cfg) {
+  if (state.starting.comfy) {
+    const error = new Error("ComfyUI 正在启动");
+    error.status = 409;
+    throw error;
+  }
   const targetUrl = state.comfyUrl || cfg.comfyUrl;
   if (await probeComfy(targetUrl, 900)) {
     const error = new Error("ComfyUI 已在运行");
@@ -1535,6 +1543,7 @@ async function startComfyProcess(cfg) {
     state.comfyUrl = result.url;
     state.adoptedComfyUrl = null;
     state.comfyStartError = "";
+    state.comfyNeedsPath = false;
     cfg.comfyDir = result.install.dir;
     if (result.install.workflowsDir) cfg.comfyWorkflowsDir = result.install.workflowsDir;
     persistDiscovery(cfg);
@@ -1747,7 +1756,20 @@ async function startControlServer(cfg) {
             res.end(JSON.stringify({ ok: false, error: `目录不存在：${selected}` }));
             return;
           }
+          const selectedInfo = comfyInstallInfo(selected);
+          const selectedPlan = resolveLaunchPlan(selectedInfo);
+          if (!selectedInfo || !selectedPlan) {
+            res.statusCode = 400;
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: "选择的目录不是有效的 ComfyUI 安装；请选择包含 ComfyUI/main.py、启动脚本或 ComfyUI.exe 的目录。",
+              })
+            );
+            return;
+          }
           const applied = applyComfyDir(cfg, selected);
+          const running = await probeComfy(state.comfyUrl || cfg.comfyUrl, 700);
           log(`已选择 ComfyUI 启动路径：${selected}${applied.workflowsDir ? `（工作流 ${applied.workflowsDir}）` : ""}`);
           res.end(
             JSON.stringify({
@@ -1757,8 +1779,16 @@ async function startControlServer(cfg) {
               workflowsDir: applied.workflowsDir,
               detected: applied.detected,
               plan: applied.plan ? { kind: applied.plan.kind, file: applied.plan.file } : null,
+              autoStart: !running,
             })
           );
+          if (!running) {
+            void startComfyProcess(cfg).catch((error) => {
+              if (error?.status === 409) return;
+              state.comfyStartError = error?.message || String(error);
+              log(`选择路径后启动 ComfyUI 失败：${state.comfyStartError}`, "ERROR");
+            });
+          }
         } catch (error) {
           res.statusCode = 500;
           res.end(JSON.stringify({ ok: false, error: error.message }));
@@ -1912,6 +1942,11 @@ async function main() {
     if (installed.length) log(`已自动放置 ${installed.length} 个内置节点包${comfy ? "；ComfyUI 已在运行，重启后生效" : ""}`);
   }
   if (!comfy) {
+    const comfyPlan = comfyInstall ? resolveLaunchPlan(comfyInstall) : null;
+    state.comfyNeedsPath = !comfyInstall || !comfyPlan;
+    if (state.comfyNeedsPath) {
+      log("未检测到可用的 ComfyUI 安装目录，请在控制台选择 ComfyUI 路径。", "WARN");
+    }
     if (DRY_RUN) {
       const plan = resolveLaunchPlan(comfyInstall);
       if (!comfyInstall) {

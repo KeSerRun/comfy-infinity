@@ -273,6 +273,13 @@
   }
   .banner[hidden] { display: none; }
   .banner code { font-family: var(--mono); font-size: 11.5px; }
+  .banner.warn {
+    align-items: center;
+    border-color: var(--warn);
+    background: var(--warn-glow);
+    color: var(--warn);
+  }
+  .banner.warn .btn { flex: none; margin-left: auto; }
 
   .panel {
     background: var(--panel);
@@ -506,6 +513,11 @@
     </header>
 
     <div class="banner" id="errorBanner" role="alert" hidden></div>
+    <div class="banner warn" id="comfyPathBanner" role="status" hidden>
+      <span aria-hidden="true">●</span>
+      <div>未检测到可用的 ComfyUI 安装目录，请选择 ComfyUI 路径后启动。</div>
+      <button class="btn small" id="pickComfyPathButton" type="button">选择 ComfyUI 路径</button>
+    </div>
 
     <section class="panel" aria-labelledby="servicesTitle">
       <div class="panel-head">
@@ -856,6 +868,7 @@
         state.lastComfyError = comfyError;
       }
       $("errorBanner").hidden = true;
+      $("comfyPathBanner").hidden = !(comfy?.needsPath && !comfy.reachable && !comfy.starting);
       renderOverall(status);
       renderServices(status);
       renderConfig(status);
@@ -869,6 +882,7 @@
     } catch (error) {
       $("errorBanner").hidden = false;
       $("errorBanner").innerHTML = `<span aria-hidden="true">●</span><div>无法读取启动器状态：<code>${escapeHtml(error instanceof Error ? error.message : error)}</code>。启动器可能已退出，或控制端口被占用。</div>`;
+      $("comfyPathBanner").hidden = true;
       renderOverall(null);
     }
   }
@@ -921,8 +935,8 @@
           showToast("已取消选择", "ok");
         } else if (data.path) {
           const planText = data.plan ? `（${data.plan.kind === "desktop" ? "桌面版" : data.plan.kind === "script" ? "启动脚本" : "Python"}）` : "（未识别到启动方式）";
-          const restartHint = state.status?.services?.comfy?.reachable ? "，重启 ComfyUI 后生效" : "";
-          showToast(`启动路径：${data.path}${planText}${restartHint}`, data.plan ? "ok" : "error");
+          const startHint = data.autoStart ? "，正在启动 ComfyUI…" : state.status?.services?.comfy?.reachable ? "，重启 ComfyUI 后生效" : "";
+          showToast(`启动路径：${data.path}${planText}${startHint}`, data.plan ? "ok" : "error");
         } else {
           showToast("已更新启动路径", "ok");
         }
@@ -1039,6 +1053,7 @@
     });
   }
 
+  $("pickComfyPathButton").addEventListener("click", () => void runAction("pick-comfy-dir"));
   setLogsOpen(false);
   wireActionButtons();
   void refreshStatus();
