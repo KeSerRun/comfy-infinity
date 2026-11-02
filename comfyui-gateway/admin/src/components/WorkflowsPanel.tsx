@@ -214,14 +214,17 @@ export function WorkflowsPanel({ setup, refreshToken, onChanged }: Props) {
     const key = workflowKey(item);
     setRepairing(key);
     setNotice("");
-    const popup = window.open("about:blank", "_blank");
     try {
       const target = await api.openWorkflow(item.file, item.origin === "path" ? item.source : undefined);
-      if (popup) popup.location.href = target.url;
-      else window.open(target.url, "_blank", "noopener");
+      const link = document.createElement("a");
+      link.href = target.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
       if (!target.bridge) setNotice(`已在 ComfyUI 打开，但工作流桥接未安装：${target.bridgeReason || "未知原因"}`);
     } catch (error) {
-      popup?.close();
       setNotice(`打开失败：${error instanceof Error ? error.message : error}`);
     } finally {
       setRepairing("");

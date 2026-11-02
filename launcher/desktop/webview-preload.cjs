@@ -1,6 +1,7 @@
 const { ipcRenderer } = require("electron");
 
-// 页面里的 target="_blank" 链接在 webview 中会走独立弹窗，统一交给外壳处理。
+// 页面里的 target="_blank" 链接在 webview 中会走独立弹窗，
+// 统一交给外壳处理，避免被 Electron 静默拦截。
 window.addEventListener("DOMContentLoaded", () => {
   document.addEventListener(
     "click",
