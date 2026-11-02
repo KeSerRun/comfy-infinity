@@ -592,6 +592,7 @@
     lastLog: "",
     lastComfyError: "",
     logsOpen: false,
+    comfyPathPrompted: false,
   };
 
   const ACTION_LABELS = {
@@ -869,6 +870,8 @@
       }
       $("errorBanner").hidden = true;
       $("comfyPathBanner").hidden = !(comfy?.needsPath && !comfy.reachable && !comfy.starting);
+      if (!comfy?.needsPath) state.comfyPathPrompted = false;
+      if (comfy?.needsPath && !comfy.reachable && !comfy.starting) void promptForComfyPath();
       renderOverall(status);
       renderServices(status);
       renderConfig(status);
@@ -885,6 +888,17 @@
       $("comfyPathBanner").hidden = true;
       renderOverall(null);
     }
+  }
+
+  async function promptForComfyPath() {
+    if (state.comfyPathPrompted || state.busy) return;
+    state.comfyPathPrompted = true;
+    const ok = await confirmAction(
+      "需要选择 ComfyUI 路径",
+      "没有配置有效的 ComfyUI 安装目录。启动器不会自动推断，请选择 ComfyUI 安装目录后启动。",
+      "选择 ComfyUI 路径",
+    );
+    if (ok) await runAction("pick-comfy-dir");
   }
 
   function setBusy(busy, action) {

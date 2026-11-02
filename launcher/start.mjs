@@ -184,6 +184,19 @@ function persistDiscovery(cfg) {
   }
 }
 
+function cancelComfyStart() {
+  state.comfyAttempt += 1;
+  if (state.comfyChild) {
+    try {
+      killOurChild(state.comfyChild, "ComfyUI");
+    } catch {
+      /* 切换路径时旧进程可能已退出 */
+    }
+    state.comfyChild = null;
+  }
+  state.starting.comfy = false;
+}
+
 function applyComfyDir(cfg, dir) {
   cfg.comfyDir = dir;
   const info = comfyInstallInfo(dir);
@@ -445,7 +458,11 @@ function comfyInstallInfo(dir) {
       /* 读不到就跳过 */
     }
   };
-  let electronExe = [path.join(dir, "ComfyUI.exe"), path.join(dir, "ComfyUI Desktop.exe")].find((candidate) => isFile(candidate)) || "";
+  let electronExe = [
+    path.join(dir, "ComfyUI.exe"),
+    path.join(dir, "ComfyUI Desktop.exe"),
+    path.join(dir, "Comfy Desktop.exe"),
+  ].find((candidate) => isFile(candidate)) || "";
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     const rank = (name) => (/^run_nvidia_gpu\.bat$/i.test(name) ? 0 : /^run.*\.(bat|cmd)$/i.test(name) ? 1 : /(启动|一键|开始|start|launch)/i.test(name) ? 2 : 3);
@@ -464,7 +481,12 @@ function comfyInstallInfo(dir) {
       for (const entry of bats) pushScript(path.join(base, entry.name));
     }
     if (!electronExe) {
-      const exe = entries.find((entry) => entry.isFile() && /\.exe$/i.test(entry.name) && /comfy/i.test(entry.name));
+      // 只认 ComfyUI 桌面版自己的 exe；项目的 ComfyInfinity.exe 也含 "comfy"，
+      // 绝不能把启动器误判成 ComfyUI 安装。
+      const exe = entries.find((entry) =>
+        entry.isFile() &&
+        /^(?:ComfyUI(?:[ -]?Desktop)?|Comfy Desktop)\.exe$/i.test(entry.name)
+      );
       if (exe) electronExe = path.join(dir, exe.name);
     }
   } catch {
@@ -498,7 +520,7 @@ function resolveLaunchPlan(install) {
   return null;
 }
 
-function collectComfyInstalls(cfg) {
+function collectComfyInstalls(cfg, { discover = false } = {}) {
   const home = os.homedir();
   const sameFolder = [
     ROOT,
@@ -541,6 +563,8 @@ function collectComfyInstalls(cfg) {
   };
 
   for (const dir of preferred) inspect(dir, "配置路径");
+  // 路径为空或无效时不再自动推断，交由控制台弹窗让用户明确选择。
+  if (!discover) return found;
   for (const dir of sameFolder) inspect(dir, "同文件夹");
 
   const driveRoot = path.parse(ROOT).root;
@@ -614,7 +638,7 @@ function spawnComfyTracked(plan, port = COMFY_PORT_FIRST) {
   return { child, failure };
 }
 
-async function startComfyCandidate(cfg, install, { preferredPort, label, timeoutSec } = {}) {
+async function startComfyCandidate(cfg, install, { preferredPort, label, timeoutSec, shouldAbort } = {}) {
   const plan = resolveLaunchPlan(install);
   if (!plan) return { ok: false, error: "没有可用的启动方式" };
   const launchPort = plan.kind === "python" ? preferredPort || (await pickFreePort(comfyPortCandidates(cfg))) : COMFY_PORT_FIRST;
@@ -629,6 +653,8 @@ async function startComfyCandidate(cfg, install, { preferredPort, label, timeout
       intervalMs: 2000,
       progressEveryMs: 15000,
       shouldAbort: () => {
+        const external = typeof shouldAbort === "function" ? shouldAbort() : "";
+        if (external) return external;
         if (failure.error) return `进程启动失败：${failure.error.message}`;
         if (failure.exited && failure.code !== 0) {
           return `进程退出（code=${failure.code}${failure.signal ? `，signal=${failure.signal}` : ""}）`;
@@ -654,14 +680,15 @@ async function startComfyCandidate(cfg, install, { preferredPort, label, timeout
   return { ok: false, error: reason, install, plan };
 }
 
-async function startComfyWithFallback(cfg, { preferredPort, label = "ComfyUI", timeoutSec = cfg.comfyStartTimeoutSec } = {}) {
+async function startComfyWithFallback(cfg, { preferredPort, label = "ComfyUI", timeoutSec = cfg.comfyStartTimeoutSec, shouldAbort } = {}) {
   const installs = collectComfyInstalls(cfg);
   if (!installs.length) return { ok: false, error: "未找到 ComfyUI 安装目录" };
   const failures = [];
   let firstAttempt = true;
   for (const install of installs) {
+    if (typeof shouldAbort === "function" && shouldAbort()) break;
     log(`ComfyUI 候选路径：${install.dir}`);
-    const result = await startComfyCandidate(cfg, install, { preferredPort: firstAttempt ? preferredPort : undefined, label, timeoutSec });
+    const result = await startComfyCandidate(cfg, install, { preferredPort: firstAttempt ? preferredPort : undefined, label, timeoutSec, shouldAbort });
     firstAttempt = false;
     if (result.ok) return result;
     failures.push(`${install.dir}：${result.error}`);
@@ -1017,6 +1044,7 @@ const state = {
   restarting: false,
   comfyStartError: "",
   comfyNeedsPath: false,
+  comfyAttempt: 0,
   starting: { comfy: false, gateway: false, canvas: false },
 };
 
@@ -1535,10 +1563,17 @@ async function startComfyProcess(cfg) {
     error.status = 409;
     throw error;
   }
+  const attempt = ++state.comfyAttempt;
+  const isCurrent = () => attempt === state.comfyAttempt;
   state.starting.comfy = true;
   state.comfyStartError = "";
   try {
-    const result = await startComfyWithFallback(cfg, { label: "ComfyUI（控制台启动）", timeoutSec: cfg.comfyStartTimeoutSec });
+    const result = await startComfyWithFallback(cfg, {
+      label: "ComfyUI（控制台启动）",
+      timeoutSec: cfg.comfyStartTimeoutSec,
+      shouldAbort: () => (isCurrent() ? "" : "已切换到新的 ComfyUI 路径"),
+    });
+    if (!isCurrent()) return { ok: false, canceled: true };
     if (!result.ok) throw new Error(result.error);
     state.comfyUrl = result.url;
     state.adoptedComfyUrl = null;
@@ -1549,10 +1584,10 @@ async function startComfyProcess(cfg) {
     persistDiscovery(cfg);
     return { ok: true, pid: state.comfyChild?.pid || null, url: result.url };
   } catch (error) {
-    state.comfyStartError = error?.message || String(error);
+    if (isCurrent()) state.comfyStartError = error?.message || String(error);
     throw error;
   } finally {
-    state.starting.comfy = false;
+    if (isCurrent()) state.starting.comfy = false;
   }
 }
 
@@ -1769,6 +1804,8 @@ async function startControlServer(cfg) {
             return;
           }
           const applied = applyComfyDir(cfg, selected);
+          // 用户切到新路径时，终止仍在等待旧路径的启动尝试，避免新路径被“启动中”挡住。
+          if (state.starting.comfy) cancelComfyStart();
           const running = await probeComfy(state.comfyUrl || cfg.comfyUrl, 700);
           log(`已选择 ComfyUI 启动路径：${selected}${applied.workflowsDir ? `（工作流 ${applied.workflowsDir}）` : ""}`);
           res.end(
@@ -1945,31 +1982,24 @@ async function main() {
     const comfyPlan = comfyInstall ? resolveLaunchPlan(comfyInstall) : null;
     state.comfyNeedsPath = !comfyInstall || !comfyPlan;
     if (state.comfyNeedsPath) {
-      log("未检测到可用的 ComfyUI 安装目录，请在控制台选择 ComfyUI 路径。", "WARN");
-    }
-    if (DRY_RUN) {
-      const plan = resolveLaunchPlan(comfyInstall);
-      if (!comfyInstall) {
-        log("未找到 ComfyUI 安装目录（已查环境变量 COMFYUI_DIR、config.comfyDir、C/D/E:\\ComfyUI、" +
-          "%USERPROFILE%\\ComfyUI、%USERPROFILE%\\Documents\\ComfyUI、E:\\ComfyUI_windows_portable、" +
-          "E:\\ComfyUI\\ComfyUI）。", "ERROR");
-        comfy = { url: cfg.comfyUrl, mode: "missing" };
-      } else if (!plan) {
-        log(`找到 ComfyUI 目录 ${comfyInstall.dir}，但没找到可用的启动方式（启动脚本 / python_embeded+main.py / 桌面版 exe）`, "ERROR");
-        comfy = { url: cfg.comfyUrl, mode: "missing" };
-      } else {
-        const launchPort = plan.kind === "python" ? await pickFreePort(comfyPortCandidates(cfg)) : COMFY_PORT_FIRST;
-        const planLabel = plan.kind === "desktop"
-          ? `桌面版 ${plan.file}`
-          : plan.kind === "python"
-            ? `${plan.file} ${plan.mainPy} --port ${launchPort}`
-            : `启动脚本 ${plan.file}`;
-        log(`ComfyUI 安装目录：${comfyInstall.dir}`);
-        log(`ComfyUI 启动方式：${planLabel}`);
-        if (comfyInstall.workflowsDir) log(`ComfyUI 用户工作流目录：${comfyInstall.workflowsDir}`);
-        log(`[dry-run] 将启动 ComfyUI：${planLabel}（cwd=${plan.cwd}，等待 /system_stats 最多 ${cfg.comfyStartTimeoutSec}s）`);
-        comfy = { url: `http://127.0.0.1:${launchPort}`, mode: "planned" };
-      }
+      const reason = cfg.comfyDir
+        ? `ComfyUI 路径无效：${cfg.comfyDir}`
+        : "未配置 ComfyUI 路径";
+      log(`${reason}；已跳过自动探测和启动，请在控制台选择 ComfyUI 安装目录。`, "WARN");
+      comfy = { url: cfg.comfyUrl, mode: "missing" };
+    } else if (DRY_RUN) {
+      const plan = comfyPlan;
+      const launchPort = plan.kind === "python" ? await pickFreePort(comfyPortCandidates(cfg)) : COMFY_PORT_FIRST;
+      const planLabel = plan.kind === "desktop"
+        ? `桌面版 ${plan.file}`
+        : plan.kind === "python"
+          ? `${plan.file} ${plan.mainPy} --port ${launchPort}`
+          : `启动脚本 ${plan.file}`;
+      log(`ComfyUI 安装目录：${comfyInstall.dir}`);
+      log(`ComfyUI 启动方式：${planLabel}`);
+      if (comfyInstall.workflowsDir) log(`ComfyUI 用户工作流目录：${comfyInstall.workflowsDir}`);
+      log(`[dry-run] 将启动 ComfyUI：${planLabel}（cwd=${plan.cwd}，等待 /system_stats 最多 ${cfg.comfyStartTimeoutSec}s）`);
+      comfy = { url: `http://127.0.0.1:${launchPort}`, mode: "planned" };
     } else {
       state.starting.comfy = true;
       state.comfyStartError = "";
@@ -1978,6 +2008,7 @@ async function main() {
         if (result.ok) {
           comfy = { url: result.url, mode: "started" };
           state.comfyStartError = "";
+          state.comfyNeedsPath = false;
           cfg.comfyDir = result.install.dir;
           if (result.install.workflowsDir) cfg.comfyWorkflowsDir = result.install.workflowsDir;
           persistDiscovery(cfg);

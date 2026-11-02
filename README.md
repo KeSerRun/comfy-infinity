@@ -65,13 +65,14 @@ ComfyInfinity.exe（推荐） / start-desktop.bat（开发）
 
 1. 桌面依赖缺失时，启动器会显示下载页并自动执行安装，完成后进入工作台。
 2. 网关依赖缺失时，会优先从随包的 `launcher/gateway-deps.zip` 自动修复，无需手动 `npm install`。
-3. 默认工作流会在启动时补齐；已有用户工作流不会被覆盖。
-4. 模型权重不会自动打包，需要按工作流在模型配置页下载，或手动放进 ComfyUI 对应目录。
+3. 启动器不会自动推断 ComfyUI 路径；路径为空或无效时会弹窗提示选择。
+4. 默认工作流会在启动时补齐；已有用户工作流不会被覆盖。
+5. 模型权重不会自动打包，需要按工作流在模型配置页下载，或手动放进 ComfyUI 对应目录。
 
 ## 快速开始
 
 1. 确保本机有可运行的 ComfyUI。
-2. 按需复制并修改 `launcher/config.example.json` 为 `launcher/config.json`；也可以让启动器自动发现 ComfyUI。
+2. 按需复制并修改 `launcher/config.example.json` 为 `launcher/config.json`；首次启动路径为空或无效时，控制台会弹窗提示选择 ComfyUI 安装目录。
 3. 双击 `ComfyInfinity.exe`（或运行 `start-desktop.bat`）。
 4. 在模型配置页确认 ComfyUI 目录、模型目录和工作流目录。
 
